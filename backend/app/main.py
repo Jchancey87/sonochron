@@ -7,7 +7,7 @@ from contextlib import asynccontextmanager
 
 from fastapi import FastAPI, File, Form, UploadFile, HTTPException, Header, Depends, status
 from fastapi.middleware.cors import CORSMiddleware
-from fastapi.responses import Response
+from fastapi.responses import Response, FileResponse
 from pydantic import BaseModel
 from sqlmodel import Session, select
 from sqlalchemy import text
@@ -381,8 +381,10 @@ async def get_audio(entry_id: uuid.UUID, session: Session = Depends(get_session)
         raise HTTPException(status_code=404, detail="No audio asset for this entry.")
 
     try:
-        data = await storage.retrieve_file(asset.filepath)
-    except FileNotFoundError:
+        file_path = storage._get_safe_path(asset.filepath)
+        if not file_path.exists() or not file_path.is_file():
+            raise FileNotFoundError()
+    except (FileNotFoundError, ValueError):
         raise HTTPException(status_code=404, detail="Audio file not found in storage.")
 
     fname = asset.filename.lower()
@@ -397,7 +399,7 @@ async def get_audio(entry_id: uuid.UUID, session: Session = Depends(get_session)
     else:
         media_type = "application/octet-stream"
 
-    return Response(content=data, media_type=media_type)
+    return FileResponse(path=str(file_path), media_type=media_type, filename=asset.filename)
 
 
 # ---------------------------------------------------------------------------

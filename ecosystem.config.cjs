@@ -29,20 +29,5 @@ module.exports = {
       log_date_format: 'YYYY-MM-DD HH:mm:ss',
     },
 
-    // ── Frontend: serve built dist ───────────────────────────────────
-    {
-      name: 'sonochron-ui',
-      cwd: `${PROJECT}/frontend`,
-      script: '/usr/local/bin/serve',
-      args: `-s dist -l 5173`,
-      interpreter: 'none',
-      watch: false,
-      autorestart: true,
-      max_restarts: 10,
-      restart_delay: 3000,
-      error_file: `${PROJECT}/logs/ui-error.log`,
-      out_file: `${PROJECT}/logs/ui-out.log`,
-      log_date_format: 'YYYY-MM-DD HH:mm:ss',
-    },
   ],
 }
