@@ -108,13 +108,8 @@ pm2 auto-resurrects via `/etc/systemd/system/pm2-jackc.service` on reboot.
 | `backend/.google_tokens.json` | Persisted OAuth2 tokens (gitignored) |
 | `backend/.drive_imported.json` | Tracks already-imported Drive file IDs (gitignored) |
 
-**Env vars required:**
-```
-GOOGLE_CLIENT_ID=...
-GOOGLE_CLIENT_SECRET=...
-GOOGLE_REDIRECT_URI=https://sonochron.homma.casa/api/drive/callback  # or override
-GOOGLE_DRIVE_FOLDER=<folder-id-or-URL>  # optional; defaults to all audio files
-```
+See [backend/.env.example](file:///home/jackc/projects/sonochron/backend/.env.example) for required environment variables.
+
 
 **ffmpeg usage:** Downloaded audio files are converted to 16-bit 44.1kHz mono WAV via ffmpeg subprocess before ingestion.
 
