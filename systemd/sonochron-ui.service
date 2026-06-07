@@ -1,0 +1,26 @@
+[Unit]
+Description=Sonochron UI — static frontend (serve)
+After=network.target sonochron-api.service
+Wants=sonochron-api.service
+
+[Service]
+Type=simple
+User=jackc
+Group=jackc
+WorkingDirectory=/home/jackc/projects/sonochron/frontend
+
+ExecStart=/usr/local/bin/serve -s dist -l 5173
+
+Restart=on-failure
+RestartSec=5s
+
+# Logging
+StandardOutput=append:/home/jackc/projects/sonochron/logs/ui-out.log
+StandardError=append:/home/jackc/projects/sonochron/logs/ui-error.log
+
+# Hardening
+NoNewPrivileges=true
+PrivateTmp=true
+
+[Install]
+WantedBy=multi-user.target

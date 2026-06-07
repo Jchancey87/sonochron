@@ -1,0 +1,62 @@
+# Node.js
+node_modules/
+npm-debug.log*
+yarn-debug.log*
+yarn-error.log*
+pnpm-debug.log*
+
+# Build outputs (allow frontend/dist since it may be used for deployment)
+# dist/
+# build/
+.next/
+out/
+
+# Environment files (exclude by default, but frontend/.env may be intentional)
+.env
+frontend/.env
+
+# Logs
+logs/*.log
+*.log
+
+# OS files
+.DS_Store
+Thumbs.db
+
+# Editor
+.vscode/
+.idea/
+*.swp
+*.swo
+
+# Python
+__pycache__/
+*.pyc
+*.pyo
+.venv/
+venv/
+
+# Agent working directories (session-specific, not for version control)
+.agents/*/
+!.agents/QDRANT_SKILLS.md
+!.agents/skills/
+
+# Misc
+.cache/
+.tmp/
+
+# Qdrant local storage (runtime data, not source)
+backend/qdrant_storage/
+backend/backend/qdrant_storage/
+
+# Raw audio uploads (runtime data)
+backend/storage/
+
+# Test runtime databases and storage
+tests/*.db
+tests/test_qdrant_storage/
+tests/mock_db.json
+tests/storage/
+backend/tests/
+backend/backend/storage/
+backend/backend/qdrant_storage/

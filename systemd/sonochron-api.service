@@ -1,0 +1,33 @@
+[Unit]
+Description=Sonochron API — FastAPI/Uvicorn backend
+After=network.target postgresql.service
+Wants=network.target
+
+[Service]
+Type=simple
+User=jackc
+Group=jackc
+WorkingDirectory=/home/jackc/projects/sonochron/backend
+
+# Environment
+EnvironmentFile=/home/jackc/projects/sonochron/backend/.env
+
+ExecStart=/home/jackc/projects/sonochron/backend/.venv/bin/uvicorn \
+    app.main:app \
+    --host 0.0.0.0 \
+    --port 8000 \
+    --workers 1
+
+Restart=on-failure
+RestartSec=5s
+
+# Logging
+StandardOutput=append:/home/jackc/projects/sonochron/logs/api-out.log
+StandardError=append:/home/jackc/projects/sonochron/logs/api-error.log
+
+# Hardening
+NoNewPrivileges=true
+PrivateTmp=true
+
+[Install]
+WantedBy=multi-user.target
