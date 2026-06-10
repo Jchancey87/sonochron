@@ -407,21 +407,26 @@ def _import_file_sync(drive_file_id: str, filename: str) -> str:
             context = EntryContext(entry_id=entry_id)
             session.add(context)
 
-            # Store WAV under the normal storage layout
-            storage_base = Path(
-                os.environ.get("STORAGE_BASE_DIR", "backend/storage/raw")
-            )
-            dest_dir = storage_base / str(year_val) / f"{month_val:02d}" / str(entry_id)
-            dest_dir.mkdir(parents=True, exist_ok=True)
+            # Store WAV under the normal storage layout using StorageProvider
             dest_name = f"{Path(filename).stem}.wav"
-            dest_path = dest_dir / dest_name
-            shutil.copy2(wav_path, dest_path)
+            rel_path = f"{year_val}/{month_val:02d}/{entry_id}/{dest_name}"
+            
+            wav_bytes = Path(wav_path).read_bytes()
+            
+            from app.storage import LocalStorageProvider
+            storage_instance = LocalStorageProvider(base_dir=os.environ.get("STORAGE_BASE_DIR", "backend/storage/raw"))
+            
+            import asyncio
+            loop = asyncio.new_event_loop()
+            try:
+                loop.run_until_complete(storage_instance.store_file(rel_path, wav_bytes))
+            finally:
+                loop.close()
 
-            rel_path = dest_path.relative_to(storage_base)
             asset = SampleAsset(
                 entry_id=entry_id,
                 filename=dest_name,
-                filepath=str(rel_path),
+                filepath=rel_path,
                 checksum_sha256=checksum,
                 byte_size=byte_size,
             )

@@ -21,6 +21,7 @@ from typing import Optional
 from sqlmodel import Session, select
 
 from app.database import engine, DiaryEntry, SampleAsset
+from app.storage import LocalStorageProvider
 
 logger = logging.getLogger("sonochron.pipeline")
 
@@ -41,6 +42,7 @@ STAGE_FAILED = "failed"
 
 # Storage base dir (must match main.py / LocalStorageProvider)
 _STORAGE_BASE = "backend/storage/raw"
+storage = LocalStorageProvider(base_dir=_STORAGE_BASE)
 
 
 def _resolve_audio_path(asset_filepath: str) -> str:
@@ -101,46 +103,44 @@ def _stage_detect_speech(session: Session, entry: DiaryEntry) -> bool:
     A non-empty transcript is treated as speech detected.
     Falls back to True on model errors (non-fatal heuristic).
     """
-    from app.database import EntryContext
+    async def _run():
+        from app.database import EntryContext
 
-    asset = session.exec(
-        select(SampleAsset).where(SampleAsset.entry_id == entry.id)
-    ).first()
-
-    if not asset:
-        # No asset — can't detect speech, proceed anyway
-        _advance_stage(session, entry, "speech_detected")
-        return True
-
-    audio_path = _resolve_audio_path(asset.filepath)
-    if not Path(audio_path).exists():
-        logger.warning("Audio file not found at %s — skipping speech detection", audio_path)
-        _advance_stage(session, entry, "speech_detected")
-        return True
-
-    try:
-        from app.ml import transcribe_audio
-        transcript = transcribe_audio(audio_path)
-        # Store transcript in EntryContext notes if no notes yet
-        context = session.exec(
-            select(EntryContext).where(EntryContext.entry_id == entry.id)
+        asset = session.exec(
+            select(SampleAsset).where(SampleAsset.entry_id == entry.id)
         ).first()
-        if context and not context.notes and transcript:
-            context.notes = f"[Transcript] {transcript}"
-            session.add(context)
-            session.commit()
-        # Store transcript on entry for later re-use
-        entry._whisper_transcript = transcript  # transient attr for pipeline use
-        speech_detected = bool(transcript.strip())
-        logger.info(
-            "Speech detection for entry %s: %s (transcript length: %d)",
-            entry.id, speech_detected, len(transcript)
-        )
-    except Exception as exc:
-        logger.warning("Speech detection error for entry %s: %s — assuming speech present", entry.id, exc)
 
-    _advance_stage(session, entry, "speech_detected")
-    return True
+        if not asset:
+            _advance_stage(session, entry, "speech_detected")
+            return True
+
+        try:
+            async with storage.local_filepath(asset.filepath) as local_path:
+                from app.ml import transcribe_audio
+                transcript = transcribe_audio(str(local_path))
+                
+                context = session.exec(
+                    select(EntryContext).where(EntryContext.entry_id == entry.id)
+                ).first()
+                if context and not context.notes and transcript:
+                    context.notes = f"[Transcript] {transcript}"
+                    session.add(context)
+                    session.commit()
+                entry._whisper_transcript = transcript
+                speech_detected = bool(transcript.strip())
+                logger.info(
+                    "Speech detection for entry %s: %s (transcript length: %d)",
+                    entry.id, speech_detected, len(transcript)
+                )
+        except FileNotFoundError:
+            logger.warning("Audio file missing for speech detection: %s", asset.filepath)
+        except Exception as exc:
+            logger.warning("Speech detection error for entry %s: %s — assuming speech present", entry.id, exc)
+
+        _advance_stage(session, entry, "speech_detected")
+        return True
+
+    return asyncio.run(_run())
 
 
 def _stage_transcribe(session: Session, entry: DiaryEntry) -> bool:
@@ -150,60 +150,60 @@ def _stage_transcribe(session: Session, entry: DiaryEntry) -> bool:
     The transcript is stored as a prefix in EntryContext.notes
     if the user hasn't provided notes (non-destructive).
     """
-    from app.database import EntryContext
+    async def _run():
+        from app.database import EntryContext
 
-    asset = session.exec(
-        select(SampleAsset).where(SampleAsset.entry_id == entry.id)
-    ).first()
-
-    if not asset:
-        _advance_stage(session, entry, "transcribed")
-        return True
-
-    audio_path = _resolve_audio_path(asset.filepath)
-    if not Path(audio_path).exists():
-        logger.warning("Audio file missing for transcription: %s", audio_path)
-        _advance_stage(session, entry, "transcribed")
-        return True
-
-    try:
-        from app.ml import transcribe_audio
-        transcript = transcribe_audio(audio_path)
-
-        # Persist transcript: prepend to context.notes if currently empty or
-        # transcript marker not already there
-        context = session.exec(
-            select(EntryContext).where(EntryContext.entry_id == entry.id)
+        asset = session.exec(
+            select(SampleAsset).where(SampleAsset.entry_id == entry.id)
         ).first()
-        if context and transcript:
-            marker = "[Transcript] "
-            existing = context.notes or ""
-            if marker not in existing:
-                if existing:
-                    context.notes = f"{marker}{transcript}\n\n{existing}"
-                else:
-                    context.notes = f"{marker}{transcript}"
-                session.add(context)
-                session.commit()
 
-        # Auto-generate title from transcript if none set
-        if not entry.title and transcript:
-            # Use the first ~60 chars of transcript as a working title
-            words = transcript.strip().split()
-            snippet = " ".join(words[:10])
-            if len(snippet) > 60:
-                snippet = snippet[:57] + "…"
-            entry.title = snippet
-            session.add(entry)
-            session.commit()
+        if not asset:
+            _advance_stage(session, entry, "transcribed")
+            return True
 
-        logger.info("Transcription stored for entry %s (%d chars)", entry.id, len(transcript))
-    except Exception as exc:
-        logger.error("Transcription stage failed for entry %s: %s", entry.id, exc)
-        # Non-fatal: continue pipeline
+        try:
+            async with storage.local_filepath(asset.filepath) as local_path:
+                from app.ml import transcribe_audio
+                transcript = transcribe_audio(str(local_path))
 
-    _advance_stage(session, entry, "transcribed")
-    return True
+                # Persist transcript: prepend to context.notes if currently empty or
+                # transcript marker not already there
+                context = session.exec(
+                    select(EntryContext).where(EntryContext.entry_id == entry.id)
+                ).first()
+                if context and transcript:
+                    marker = "[Transcript] "
+                    existing = context.notes or ""
+                    if marker not in existing:
+                        if existing:
+                            context.notes = f"{marker}{transcript}\n\n{existing}"
+                        else:
+                            context.notes = f"{marker}{transcript}"
+                        session.add(context)
+                        session.commit()
+
+                # Auto-generate title from transcript if none set
+                if not entry.title and transcript:
+                    # Use the first ~60 chars of transcript as a working title
+                    words = transcript.strip().split()
+                    snippet = " ".join(words[:10])
+                    if len(snippet) > 60:
+                        snippet = snippet[:57] + "…"
+                    entry.title = snippet
+                    session.add(entry)
+                    session.commit()
+
+                logger.info("Transcription stored for entry %s (%d chars)", entry.id, len(transcript))
+        except FileNotFoundError:
+            logger.warning("Audio file missing for transcription: %s", asset.filepath)
+        except Exception as exc:
+            logger.error("Transcription stage failed for entry %s: %s", entry.id, exc)
+            # Non-fatal: continue pipeline
+
+        _advance_stage(session, entry, "transcribed")
+        return True
+
+    return asyncio.run(_run())
 
 
 def _stage_text_embed(session: Session, entry: DiaryEntry) -> bool:
@@ -261,26 +261,32 @@ def _stage_audio_embed(session: Session, entry: DiaryEntry) -> bool:
     Generates a real 1024-dim audio embedding using CLAP (laion/larger_clap_general).
     The vector is stored in Qdrant during the index stage.
     """
-    asset = session.exec(
-        select(SampleAsset).where(SampleAsset.entry_id == entry.id)
-    ).first()
+    async def _run():
+        asset = session.exec(
+            select(SampleAsset).where(SampleAsset.entry_id == entry.id)
+        ).first()
 
-    audio_path = _resolve_audio_path(asset.filepath) if asset else ""
+        if not asset:
+            _advance_stage(session, entry, "audio_embedded")
+            return True
 
-    try:
-        from app.ml import embed_audio
-        vec = embed_audio(audio_path)
-        logger.info(
-            "Audio embedding generated for entry %s (dim=%d, norm=%.4f)",
-            entry.id, len(vec), sum(x**2 for x in vec)**0.5
-        )
-        entry._audio_vector = vec
-    except Exception as exc:
-        logger.error("Audio embedding failed for entry %s: %s", entry.id, exc)
-        entry._audio_vector = [0.0] * 1024
+        try:
+            async with storage.local_filepath(asset.filepath) as local_path:
+                from app.ml import embed_audio
+                vec = embed_audio(str(local_path))
+                logger.info(
+                    "Audio embedding generated for entry %s (dim=%d, norm=%.4f)",
+                    entry.id, len(vec), sum(x**2 for x in vec)**0.5
+                )
+                entry._audio_vector = vec
+        except Exception as exc:
+            logger.error("Audio embedding failed for entry %s: %s", entry.id, exc)
+            entry._audio_vector = [0.0] * 1024
 
-    _advance_stage(session, entry, "audio_embedded")
-    return True
+        _advance_stage(session, entry, "audio_embedded")
+        return True
+
+    return asyncio.run(_run())
 
 
 def _stage_index(session: Session, entry: DiaryEntry) -> bool:
@@ -290,68 +296,78 @@ def _stage_index(session: Session, entry: DiaryEntry) -> bool:
     Uses real vectors stashed on the entry object by previous stages.
     Falls back to recomputing if vectors weren't stashed (e.g. pipeline resumed).
     """
-    from app.database import EntryContext, SampleAsset
-    from app.search import upsert_entry, _build_entry_payload
+    async def _run():
+        from app.database import EntryContext, SampleAsset
+        from app.search import upsert_entry, _build_entry_payload
 
-    context = session.exec(
-        select(EntryContext).where(EntryContext.entry_id == entry.id)
-    ).first()
-    asset = session.exec(
-        select(SampleAsset).where(SampleAsset.entry_id == entry.id)
-    ).first()
-    audio_filepath = asset.filepath if asset else ""
-    audio_path = _resolve_audio_path(audio_filepath) if audio_filepath else ""
-    payload = _build_entry_payload(entry, context)
+        context = session.exec(
+            select(EntryContext).where(EntryContext.entry_id == entry.id)
+        ).first()
+        asset = session.exec(
+            select(SampleAsset).where(SampleAsset.entry_id == entry.id)
+        ).first()
+        audio_filepath = asset.filepath if asset else ""
+        payload = _build_entry_payload(entry, context)
 
-    # Build text content
-    text_parts = []
-    if entry.title:
-        text_parts.append(entry.title)
-    if context:
-        if context.notes:
-            text_parts.append(context.notes)
-        if context.mood:
-            text_parts.append(f"mood:{context.mood}")
-        if context.location:
-            text_parts.append(f"location:{context.location}")
-        if context.companions:
-            text_parts.append(" ".join(context.companions))
-    text_content = " ".join(text_parts) or f"entry:{entry.id}"
+        # Build text content
+        text_parts = []
+        if entry.title:
+            text_parts.append(entry.title)
+        if context:
+            if context.notes:
+                text_parts.append(context.notes)
+            if context.mood:
+                text_parts.append(f"mood:{context.mood}")
+            if context.location:
+                text_parts.append(f"location:{context.location}")
+            if context.companions:
+                text_parts.append(" ".join(context.companions))
+        text_content = " ".join(text_parts) or f"entry:{entry.id}"
 
-    # Retrieve or recompute vectors
-    text_vec = getattr(entry, "_text_vector", None)
-    audio_vec = getattr(entry, "_audio_vector", None)
-    sparse_vec = getattr(entry, "_sparse_vector", None)
+        # Retrieve or recompute vectors
+        text_vec = getattr(entry, "_text_vector", None)
+        audio_vec = getattr(entry, "_audio_vector", None)
+        sparse_vec = getattr(entry, "_sparse_vector", None)
 
-    if text_vec is None:
-        from app.ml import embed_text
-        text_vec = embed_text(text_content)
+        if text_vec is None:
+            from app.ml import embed_text
+            text_vec = embed_text(text_content)
 
-    if audio_vec is None:
-        from app.ml import embed_audio
-        audio_vec = embed_audio(audio_path)
+        if audio_vec is None:
+            if audio_filepath:
+                try:
+                    async with storage.local_filepath(audio_filepath) as local_path:
+                        from app.ml import embed_audio
+                        audio_vec = embed_audio(str(local_path))
+                except Exception as exc:
+                    logger.error("Recomputing audio embedding failed for entry %s: %s", entry.id, exc)
+                    audio_vec = [0.0] * 1024
+            else:
+                audio_vec = [0.0] * 1024
 
-    if sparse_vec is None:
-        from app.ml import embed_text_sparse
-        sparse_vec = embed_text_sparse(text_content)
+        if sparse_vec is None:
+            from app.ml import embed_text_sparse
+            sparse_vec = embed_text_sparse(text_content)
 
-    try:
-        upsert_entry(
-            entry_id=entry.id,
-            text_content=text_content,
-            audio_filepath=audio_filepath,
-            payload=payload,
-            text_vector=text_vec,
-            audio_vector=audio_vec,
-            sparse_vector=sparse_vec,
-        )
-        logger.info("Qdrant upsert complete for entry %s (named+sparse)", entry.id)
-    except Exception as exc:
-        logger.error("Qdrant upsert failed for entry %s: %s", entry.id, exc)
-        # Non-fatal: Qdrant is derivable — log but don't fail the pipeline
+        try:
+            upsert_entry(
+                entry_id=entry.id,
+                text_content=text_content,
+                audio_filepath=audio_filepath,
+                payload=payload,
+                text_vector=text_vec,
+                audio_vector=audio_vec,
+                sparse_vector=sparse_vec,
+            )
+            logger.info("Qdrant upsert complete for entry %s (named+sparse)", entry.id)
+        except Exception as exc:
+            logger.error("Qdrant upsert failed for entry %s: %s", entry.id, exc)
+            # Non-fatal: Qdrant is derivable — log but don't fail the pipeline
 
-    _advance_stage(session, entry, "indexed")
-    return True
+        _advance_stage(session, entry, "indexed")
+        return True
+
+    return asyncio.run(_run())
 
 
 def _stage_ready(session: Session, entry: DiaryEntry) -> bool:

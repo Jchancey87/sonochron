@@ -2,6 +2,8 @@ import os
 from abc import ABC, abstractmethod
 from pathlib import Path
 import anyio
+from contextlib import asynccontextmanager
+from typing import AsyncGenerator
 
 class StorageProvider(ABC):
     @abstractmethod
@@ -27,11 +29,51 @@ class StorageProvider(ABC):
         """
         pass
 
+    @asynccontextmanager
+    async def local_filepath(self, path_key: str) -> AsyncGenerator[Path, None]:
+        """
+        Yields a local Path to the file.
+        For remote storage, downloads the file to a temporary location and deletes it on exit.
+        """
+        import tempfile
+        
+        data = await self.retrieve_file(path_key)
+        suffix = Path(path_key).suffix
+        
+        def _write_temp():
+            fd, temp_path_str = tempfile.mkstemp(suffix=suffix)
+            try:
+                with os.fdopen(fd, "wb") as f:
+                    f.write(data)
+                return Path(temp_path_str)
+            except Exception:
+                os.unlink(temp_path_str)
+                raise
+
+        temp_path = await anyio.to_thread.run_sync(_write_temp)
+        try:
+            yield temp_path
+        finally:
+            def _cleanup():
+                try:
+                    if temp_path.exists():
+                        temp_path.unlink()
+                except Exception:
+                    pass
+            await anyio.to_thread.run_sync(_cleanup)
+
 
 class LocalStorageProvider(StorageProvider):
     def __init__(self, base_dir: str = "backend/storage"):
         self.base_dir = Path(base_dir).resolve()
         self.base_dir.mkdir(parents=True, exist_ok=True)
+
+    @asynccontextmanager
+    async def local_filepath(self, path_key: str) -> AsyncGenerator[Path, None]:
+        target_path = self._get_safe_path(path_key)
+        if not target_path.exists():
+            raise FileNotFoundError(f"File not found: {path_key}")
+        yield target_path
 
     def _get_safe_path(self, path_key: str) -> Path:
         """

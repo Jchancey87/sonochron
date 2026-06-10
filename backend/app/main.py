@@ -437,15 +437,14 @@ async def get_waveform(
     if not asset:
         raise HTTPException(status_code=404, detail="No audio asset for this entry.")
 
-    audio_path = f"backend/storage/raw/{asset.filepath}"
-
     try:
         from app.ml import extract_waveform_peaks
         import asyncio
         loop = asyncio.get_event_loop()
-        peaks = await loop.run_in_executor(
-            None, lambda: extract_waveform_peaks(audio_path, num_bars=bars)
-        )
+        async with storage.local_filepath(asset.filepath) as local_path:
+            peaks = await loop.run_in_executor(
+                None, lambda: extract_waveform_peaks(str(local_path), num_bars=bars)
+            )
     except Exception as exc:
         import logging
         logging.getLogger("sonochron.api").warning("Waveform extraction failed: %s", exc)
