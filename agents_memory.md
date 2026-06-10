@@ -139,16 +139,23 @@ See [backend/.env.example](file:///home/jackc/projects/sonochron/backend/.env.ex
 
 ---
 
-## Qdrant Skills
-| Resource | Path |
-|---|---|
-| Skills guide (Sonochron-specific) | `.agents/QDRANT_SKILLS.md` |
-| All skill files | `.agents/skills/qdrant/` |
-| Upstream source | https://github.com/qdrant/skills |
-| Code snippet API | `https://skills.qdrant.tech/snippets/search?language=python&query=<topic>` |
+## Agent & Productivity Skills
+| Resource | Path / Source | Description |
+|---|---|---|
+| Productivity Skills | `.agents/skills/productivity/` | Custom workspace productivity suite containing `caveman` and `handoff` skills. |
+| Engineering Skills | `.agents/skills/engineering/` | Code quality and design skills including `improve-codebase-architecture`. |
+| Qdrant Skills | `.agents/skills/qdrant/` | Core SDK snippets, migration tactics, and search quality skills. |
+| Upstream Qdrant | https://github.com/qdrant/skills | Reference API for Qdrant operations. |
+| Upstream Productivity | https://github.com/mattpocock/skills | Source for caveman/handoff and engineering skill concepts. |
 
-Key skills for Sonochron: **model-migration** (for CLAP/PANNs swap), **search-quality** (hybrid search future work), **clients-sdk** (Python API examples).
+### Key Skills Instructions
+- **`productivity/caveman`**: Token-saving mode (~75% reduction). Drops grammatical filler, articles, and pleasantries. Use for devlogs and agent-to-agent messaging/contexts.
+- **`productivity/handoff`**: HTML-based context migrations. **Going forward, all handoffs between agents must be saved as `handoff.html`** using semantic HTML (with metadata in head tags), as it is highly optimized for LLMs to parse.
+- **`engineering/improve-codebase-architecture`**: Refactoring methodology to deepen shallow modules, maximize locality and leverage, and output clean interactive HTML before/after architecture reports in `/tmp/`.
+- **`qdrant/qdrant-model-migration`**: Used for zero-downtime model and vector swaps.
 
 ---
 
-*Last updated: 2026-06-07 (session 6 — Google Drive integration + ffmpeg; test suite fixed: 49/49 passing)*
+*Last updated: 2026-06-10 (session 7 — Configured productivity/caveman, productivity/handoff, and engineering/improve-codebase-architecture skills)*
+
+
