@@ -16,7 +16,6 @@ from sqlalchemy.orm import selectinload
 from app.database import (
     init_db,
     get_session,
-    get_or_create_month_archive,
     DiaryEntry,
     EntryContext,
     SampleAsset,
@@ -24,36 +23,18 @@ from app.database import (
     YearArchive,
     MonthArchive,
 )
-from app.storage import LocalStorageProvider
-from app.pipeline import enqueue_processing
 from app.search import search_text, search_similar_audio, ensure_collections
-
-# --- Storage singleton ---
-storage = LocalStorageProvider(base_dir="backend/storage/raw")
 
 
 @asynccontextmanager
 async def lifespan(app: FastAPI):
-    """Initialize DB tables and Qdrant collections on startup."""
-    import asyncio
+    """Initialize DB tables and Qdrant collections on startup and start background loop."""
     init_db()
     ensure_collections()
 
-    # Start Drive auto-sync background loop (every 30 minutes)
-    async def _drive_sync_loop():
-        from app.drive import run_auto_sync, is_authenticated
-        while True:
-            await asyncio.sleep(30 * 60)  # wait 30 min between syncs
-            if is_authenticated():
-                try:
-                    await run_auto_sync()
-                except Exception as exc:
-                    import logging
-                    logging.getLogger("sonochron.drive").error(
-                        "Auto-sync loop error: %s", exc
-                    )
-
-    asyncio.create_task(_drive_sync_loop())
+    # Start Drive auto-sync background loop
+    from app.services.drive_service import start_drive_sync_loop
+    start_drive_sync_loop()
     yield
 
 
@@ -160,112 +141,20 @@ async def create_entry(
     Create a diary entry. Idempotency key in X-Idempotency-Key header prevents
     duplicate entries on retry. Stores raw audio immutably and enqueues processing.
     """
-    # 1. Parse local_capture_time
-    try:
-        capture_dt = datetime.fromisoformat(local_capture_time.replace("Z", "+00:00"))
-    except Exception:
-        capture_dt = datetime(2026, 6, 6, 12, 0, 0)
-
-    # 2. Idempotency check
-    if x_idempotency_key:
-        existing_key = session.get(IdempotencyKey, x_idempotency_key)
-        if existing_key:
-            existing_entry = session.get(DiaryEntry, existing_key.entry_id)
-            if existing_entry:
-                return _entry_to_out(existing_entry, session)
-
-    # 3. Read file & compute checksum
+    from app.services import timeline_service
     content = await file.read()
-    if not content:
-        raise HTTPException(
-            status_code=status.HTTP_422_UNPROCESSABLE_ENTITY,
-            detail="Uploaded file is empty.",
-        )
-    checksum = hashlib.sha256(content).hexdigest()
-    byte_size = len(content)
-
-    # 4. Parse companions
-    companions_list: List[str] = []
-    if companions:
-        try:
-            companions_list = json.loads(companions)
-            if not isinstance(companions_list, list):
-                companions_list = [companions]
-        except (json.JSONDecodeError, ValueError):
-            companions_list = [c.strip() for c in companions.split(",") if c.strip()]
-
-    # 5. Build immutable storage key
-    entry_id = uuid.uuid4()
-    safe_filename = file.filename or f"recording_{entry_id}.bin"
-    storage_key = f"{capture_dt.year}/{capture_dt.month:02d}/{entry_id}/{safe_filename}"
-
-    # 6. Atomic Postgres transaction
-    stored_path = None
-    try:
-        # 6a. Resolve/create YearArchive and MonthArchive
-        month_archive = get_or_create_month_archive(session, capture_dt)
-
-        # 6b. Create DiaryEntry
-        entry = DiaryEntry(
-            id=entry_id,
-            local_capture_time=capture_dt,
-            utc_capture_time=capture_dt,
-            title=title,
-            stage="uploaded",
-            month_archive_id=month_archive.id,
-            created_at=datetime.utcnow(),
-            updated_at=datetime.utcnow(),
-        )
-        session.add(entry)
-        session.flush()
-
-        # 6c. Create EntryContext
-        context = EntryContext(
-            entry_id=entry.id,
-            mood=mood,
-            location=location,
-            companions=companions_list,
-            notes=notes,
-        )
-        session.add(context)
-
-        # 6d. Create SampleAsset
-        asset = SampleAsset(
-            entry_id=entry.id,
-            filename=safe_filename,
-            filepath=storage_key,
-            checksum_sha256=checksum,
-            byte_size=byte_size,
-        )
-        session.add(asset)
-
-        # 6e. Register idempotency key
-        if x_idempotency_key:
-            idem = IdempotencyKey(
-                key=x_idempotency_key,
-                entry_id=entry.id,
-                created_at=datetime.utcnow(),
-            )
-            session.add(idem)
-
-        # 7. Persist raw audio inside the transaction block before commit
-        stored_path = storage_key
-        await storage.store_file(storage_key, content)
-
-        session.commit()
-    except Exception as exc:
-        session.rollback()
-        if stored_path:
-            try:
-                await storage.delete_file(stored_path)
-            except Exception:
-                pass
-        raise exc
-
-    # 8. Enqueue background processing
-    await enqueue_processing(entry_id=entry.id)
-
-    session.refresh(entry)
+    entry = await timeline_service.create_diary_entry(
+        session=session,
+        filename=file.filename,
+        content=content,
+        local_capture_time=local_capture_time,
+        title=title,
+        mood=mood,
+        location=location,
+        companions=companions,
+        notes=notes,
+        x_idempotency_key=x_idempotency_key,
+    )
     return _entry_to_out(entry, session)
 
 
@@ -279,40 +168,8 @@ async def create_entry(
     summary="Return the full year/month archive hierarchy",
 )
 def get_timeline(session: Session = Depends(get_session)):
-    years_stmt = select(YearArchive).order_by(YearArchive.year.desc())
-    year_archives = session.exec(years_stmt).all()
-
-    years_out = []
-    for year_archive in year_archives:
-        months_stmt = (
-            select(MonthArchive)
-            .where(MonthArchive.year == year_archive.year)
-            .order_by(MonthArchive.month.desc())
-        )
-        month_archives = session.exec(months_stmt).all()
-
-        months_out = []
-        for ma in month_archives:
-            entries_stmt = (
-                select(DiaryEntry)
-                .where(DiaryEntry.month_archive_id == ma.id)
-                .order_by(DiaryEntry.local_capture_time.desc())
-                .options(selectinload(DiaryEntry.context), selectinload(DiaryEntry.asset))
-            )
-            entries = session.exec(entries_stmt).all()
-            entries_out = [_entry_to_out(entry, session) for entry in entries]
-            entry_count = len(entries_out)
-            months_out.append(MonthArchiveOut(
-                id=ma.id,
-                year=ma.year,
-                month=ma.month,
-                entry_count=entry_count,
-                entries=entries_out,
-            ))
-
-        years_out.append(YearArchiveOut(year=year_archive.year, months=months_out))
-
-    return years_out
+    from app.services import timeline_service
+    return timeline_service.get_timeline_hierarchy(session)
 
 
 # ---------------------------------------------------------------------------
@@ -331,17 +188,14 @@ def list_entries(
     offset: int = 0,
     session: Session = Depends(get_session),
 ):
-    stmt = select(DiaryEntry).order_by(DiaryEntry.local_capture_time.desc()).options(
-        selectinload(DiaryEntry.context), selectinload(DiaryEntry.asset)
+    from app.services import timeline_service
+    entries = timeline_service.list_diary_entries(
+        session=session,
+        year=year,
+        month=month,
+        limit=limit,
+        offset=offset,
     )
-    if year is not None or month is not None:
-        stmt = stmt.join(MonthArchive, DiaryEntry.month_archive_id == MonthArchive.id)
-        if year is not None:
-            stmt = stmt.where(MonthArchive.year == year)
-        if month is not None:
-            stmt = stmt.where(MonthArchive.month == month)
-    stmt = stmt.offset(offset).limit(limit)
-    entries = session.exec(stmt).all()
     return [_entry_to_out(e, session) for e in entries]
 
 
@@ -355,7 +209,8 @@ def list_entries(
     summary="Get a single diary entry by ID",
 )
 def get_entry(entry_id: uuid.UUID, session: Session = Depends(get_session)):
-    entry = session.get(DiaryEntry, entry_id)
+    from app.services import timeline_service
+    entry = timeline_service.get_diary_entry(session, entry_id)
     if not entry:
         raise HTTPException(status_code=404, detail=f"Entry {entry_id} not found.")
     return _entry_to_out(entry, session)
@@ -370,16 +225,16 @@ def get_entry(entry_id: uuid.UUID, session: Session = Depends(get_session)):
     summary="Stream the raw audio for a diary entry",
 )
 async def get_audio(entry_id: uuid.UUID, session: Session = Depends(get_session)):
-    entry = session.get(DiaryEntry, entry_id)
+    from app.services import timeline_service
+    entry = timeline_service.get_diary_entry(session, entry_id)
     if not entry:
         raise HTTPException(status_code=404, detail=f"Entry {entry_id} not found.")
 
-    asset = session.exec(
-        select(SampleAsset).where(SampleAsset.entry_id == entry_id)
-    ).first()
+    asset = timeline_service.get_diary_entry_asset(session, entry_id)
     if not asset:
         raise HTTPException(status_code=404, detail="No audio asset for this entry.")
 
+    from app.services.timeline_service import storage
     try:
         file_path = storage._get_safe_path(asset.filepath)
         if not file_path.exists() or not file_path.is_file():
@@ -427,13 +282,12 @@ async def get_waveform(
     Uses librosa RMS per-chunk on the actual audio file.
     `bars` controls the number of data points returned (default 100).
     """
-    entry = session.get(DiaryEntry, entry_id)
+    from app.services import timeline_service
+    entry = timeline_service.get_diary_entry(session, entry_id)
     if not entry:
         raise HTTPException(status_code=404, detail=f"Entry {entry_id} not found.")
 
-    asset = session.exec(
-        select(SampleAsset).where(SampleAsset.entry_id == entry_id)
-    ).first()
+    asset = timeline_service.get_diary_entry_asset(session, entry_id)
     if not asset:
         raise HTTPException(status_code=404, detail="No audio asset for this entry.")
 
@@ -479,60 +333,9 @@ def patch_entry(
     Partially update title, mood, location, companions, or notes.
     Only provided (non-null) fields are updated. Re-indexes the entry in Qdrant.
     """
-    entry = session.get(DiaryEntry, entry_id)
-    if not entry:
-        raise HTTPException(status_code=404, detail="Entry not found.")
-
-    context = session.exec(
-        select(EntryContext).where(EntryContext.entry_id == entry_id)
-    ).first()
-
-    # Apply updates
-    if patch.title is not None:
-        entry.title = patch.title
-    entry.updated_at = datetime.utcnow()
-    session.add(entry)
-
-    if context:
-        if patch.mood is not None:
-            context.mood = patch.mood
-        if patch.location is not None:
-            context.location = patch.location
-        if patch.companions is not None:
-            context.companions = patch.companions
-        if patch.notes is not None:
-            context.notes = patch.notes
-        session.add(context)
-
-    session.commit()
-    session.refresh(entry)
-
-    # Re-index updated entry in Qdrant (non-fatal)
-    try:
-        from app.search import upsert_entry, _build_entry_payload
-        asset = session.exec(
-            select(SampleAsset).where(SampleAsset.entry_id == entry_id)
-        ).first()
-        text_parts = []
-        if entry.title:
-            text_parts.append(entry.title)
-        if context:
-            if context.notes:     text_parts.append(context.notes)
-            if context.mood:      text_parts.append(f"mood:{context.mood}")
-            if context.location:  text_parts.append(f"location:{context.location}")
-        text_content = " ".join(text_parts) or f"entry:{entry.id}"
-        upsert_entry(
-            entry_id=entry.id,
-            text_content=text_content,
-            audio_filepath=asset.filepath if asset else "",
-            payload=_build_entry_payload(entry, context),
-        )
-    except Exception as exc:
-        import logging
-        logging.getLogger("sonochron.api").warning("Qdrant re-index after patch failed: %s", exc)
-
-    ctx = session.exec(select(EntryContext).where(EntryContext.entry_id == entry_id)).first()
-    asset = session.exec(select(SampleAsset).where(SampleAsset.entry_id == entry_id)).first()
+    from app.services import timeline_service
+    patch_data = patch.model_dump(exclude_unset=True)
+    entry = timeline_service.update_diary_entry(session, entry_id, patch_data)
     return _entry_to_out(entry, session)
 
 
@@ -550,34 +353,8 @@ async def delete_entry(
     and IdempotencyKey. Also purges the audio file from storage and removes
     the entry from the Qdrant index.
     """
-    entry = session.get(DiaryEntry, entry_id)
-    if not entry:
-        raise HTTPException(status_code=404, detail="Entry not found.")
-
-    # Get asset path before cascade delete
-    asset = session.exec(
-        select(SampleAsset).where(SampleAsset.entry_id == entry_id)
-    ).first()
-    storage_key = asset.filepath if asset else None
-
-    # Remove from Qdrant (non-fatal)
-    try:
-        from app.search import delete_entry as qdrant_delete
-        qdrant_delete(entry_id)
-    except Exception as exc:
-        import logging
-        logging.getLogger("sonochron.api").warning("Qdrant delete failed: %s", exc)
-
-    # DB delete (cascades to context, asset, idempotency_keys)
-    session.delete(entry)
-    session.commit()
-
-    # Purge audio file from storage (non-fatal)
-    if storage_key:
-        try:
-            await storage.delete_file(storage_key)
-        except Exception:
-            pass  # Storage delete is best-effort
+    from app.services import timeline_service
+    await timeline_service.delete_diary_entry(session, entry_id)
 
 
 # ---------------------------------------------------------------------------
@@ -710,51 +487,8 @@ def reset_database(session: Session = Depends(get_session)):
     """Deletes all rows in the PostgreSQL database in the correct dependency order,
     purges Qdrant collections, and clears physical storage files.
     """
-    try:
-        session.execute(text("DELETE FROM idempotency_keys;"))
-        session.execute(text("DELETE FROM sample_assets;"))
-        session.execute(text("DELETE FROM entry_contexts;"))
-        session.execute(text("DELETE FROM diary_entries;"))
-        session.execute(text("DELETE FROM month_archives;"))
-        session.execute(text("DELETE FROM year_archives;"))
-        session.commit()
-    except Exception as e:
-        session.rollback()
-        raise HTTPException(
-            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
-            detail=f"Database reset failed: {str(e)}",
-        )
-
-    # Qdrant collections reset
-    try:
-        from app.search import TEXT_COLLECTION, AUDIO_COLLECTION, ensure_collections, _get_client
-        client = _get_client()
-        for coll in [TEXT_COLLECTION, AUDIO_COLLECTION]:
-            try:
-                client.delete_collection(coll)
-            except Exception:
-                pass
-        ensure_collections()
-    except Exception as e:
-        import logging
-        logging.getLogger("sonochron.api").warning("Qdrant collections reset failed: %s", e)
-
-    # Clear physical storage files
-    try:
-        import shutil
-        if storage.base_dir.exists():
-            for child in storage.base_dir.iterdir():
-                try:
-                    if child.is_file() or child.is_symlink():
-                        child.unlink()
-                    elif child.is_dir():
-                        shutil.rmtree(child)
-                except Exception:
-                    pass
-    except Exception as e:
-        import logging
-        logging.getLogger("sonochron.api").warning("Physical storage cleanup failed: %s", e)
-
+    from app.services import timeline_service
+    timeline_service.reset_system(session)
     return {"status": "ok", "message": "Database, vector index, and storage reset successfully"}
 
 
@@ -806,27 +540,23 @@ def _entry_to_out(entry: DiaryEntry, session: Session) -> DiaryEntryOut:
 
 @app.get("/api/drive/status", summary="Drive auth status and sync state")
 def drive_status():
-    from app.drive import is_authenticated, get_sync_state, get_folder_id
-    return {
-        "authenticated": is_authenticated(),
-        "folder_id": get_folder_id(),
-        "sync": get_sync_state(),
-    }
+    from app.services import drive_service
+    return drive_service.get_drive_status()
 
 
 @app.get("/api/drive/auth", summary="Start Google OAuth2 flow")
 def drive_auth():
     from fastapi.responses import RedirectResponse
-    from app.drive import get_auth_url
-    return RedirectResponse(url=get_auth_url())
+    from app.services import drive_service
+    return RedirectResponse(url=drive_service.get_auth_url())
 
 
 @app.get("/api/drive/callback", summary="OAuth2 callback — exchanges code for tokens")
 def drive_callback(code: str, state: Optional[str] = None):
     from fastapi.responses import RedirectResponse
-    from app.drive import exchange_code
+    from app.services import drive_service
     try:
-        exchange_code(code)
+        drive_service.exchange_code(code)
         return RedirectResponse(url="/?drive=connected")
     except Exception as exc:
         raise HTTPException(status_code=400, detail=f"OAuth2 exchange failed: {exc}")
@@ -834,56 +564,26 @@ def drive_callback(code: str, state: Optional[str] = None):
 
 @app.get("/api/drive/files", summary="List audio files from Google Drive")
 def drive_list_files():
-    from app.drive import list_audio_files, is_authenticated
-    if not is_authenticated():
-        raise HTTPException(status_code=401, detail="Not authenticated with Google Drive")
-    try:
-        return list_audio_files()
-    except Exception as exc:
-        raise HTTPException(status_code=500, detail=str(exc))
+    from app.services import drive_service
+    return drive_service.list_drive_files()
 
 
 @app.post("/api/drive/import/{file_id}", summary="Import a single Drive file")
 async def drive_import_file(file_id: str, filename: str = ""):
-    from app.drive import is_authenticated, list_audio_files, _import_file_sync, get_imported_ids
-    import asyncio
-    if not is_authenticated():
-        raise HTTPException(status_code=401, detail="Not authenticated with Google Drive")
-
-    # Resolve filename if not provided
-    if not filename:
-        try:
-            files = list_audio_files()
-            match = next((f for f in files if f["id"] == file_id), None)
-            if match:
-                filename = match["name"]
-        except Exception:
-            pass
-    filename = filename or f"{file_id}.m4a"
-
-    if file_id in get_imported_ids():
-        raise HTTPException(status_code=409, detail="File already imported")
-
-    try:
-        loop = asyncio.get_event_loop()
-        entry_id = await loop.run_in_executor(None, _import_file_sync, file_id, filename)
-        return {"entry_id": entry_id, "status": "imported"}
-    except Exception as exc:
-        raise HTTPException(status_code=500, detail=str(exc))
+    from app.services import drive_service
+    entry_id = await drive_service.import_drive_file(file_id, filename)
+    return {"entry_id": entry_id, "status": "imported"}
 
 
 @app.post("/api/drive/sync", summary="Manually trigger Drive auto-sync")
 async def drive_sync():
-    from app.drive import is_authenticated, run_auto_sync
-    if not is_authenticated():
-        raise HTTPException(status_code=401, detail="Not authenticated with Google Drive")
-    count = await run_auto_sync()
+    from app.services import drive_service
+    count = await drive_service.trigger_sync()
     return {"imported": count}
 
 
 @app.delete("/api/drive/auth", summary="Revoke Google Drive access")
 def drive_revoke():
-    from app.drive import revoke
-    revoke()
+    from app.services import drive_service
+    drive_service.revoke_access()
     return {"status": "revoked"}
-
