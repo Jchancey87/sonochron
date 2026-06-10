@@ -181,7 +181,7 @@ nav button.active {
 .play-btn {
   width: 28px;
   height: 28px;
-  border-radius: 50%;
+  border-radius: 2px;
   border: 1px solid var(--ink-muted);
   background: none;
   cursor: pointer;
@@ -345,7 +345,7 @@ nav button.active {
 .record-dot {
   width: 18px;
   height: 18px;
-  border-radius: 50%;
+  border-radius: 2px;
   background: var(--amber);
   transition: transform 0.2s;
 }

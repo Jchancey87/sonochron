@@ -182,7 +182,7 @@ export function DriveImportView() {
             background: 'var(--amber)',
             color: '#1a1510',
             border: 'none',
-            borderRadius: '6px',
+            borderRadius: '2px',
             padding: '10px 22px',
             fontFamily: 'var(--mono)',
             fontSize: '12px',
@@ -264,7 +264,7 @@ export function DriveImportView() {
       {error && (
         <div style={{
           background: 'rgba(192,57,43,0.12)', border: '1px solid rgba(192,57,43,0.3)',
-          borderRadius: '6px', padding: '10px 14px', marginBottom: '16px',
+          borderRadius: '2px', padding: '10px 14px', marginBottom: '16px',
           fontFamily: 'var(--mono)', fontSize: '12px', color: '#e74c3c',
         }}>
           {error}
@@ -373,9 +373,9 @@ function DriveFileRow({
       alignItems: 'center',
       justifyContent: 'space-between',
       padding: '10px 14px',
-      borderRadius: '6px',
-      background: 'var(--paper)',
-      border: '1px solid var(--border)',
+      borderRadius: '2px',
+      background: 'var(--bg-entry)',
+      border: '1px solid var(--divider)',
       opacity: dimmed ? 0.5 : 1,
       gap: '12px',
     }}>
@@ -408,8 +408,8 @@ function DriveFileRow({
             disabled={isImporting}
             style={{
               background: 'none',
-              border: '1px solid var(--border)',
-              borderRadius: '4px',
+              border: '1px solid var(--divider)',
+              borderRadius: '2px',
               padding: '5px 12px',
               fontFamily: 'var(--mono)',
               fontSize: '11px',
@@ -420,7 +420,7 @@ function DriveFileRow({
               transition: 'border-color 0.2s, color 0.2s',
             }}
             onMouseEnter={e => { if (!isImporting) (e.target as HTMLButtonElement).style.borderColor = 'var(--amber)' }}
-            onMouseLeave={e => { (e.target as HTMLButtonElement).style.borderColor = 'var(--border)' }}
+            onMouseLeave={e => { (e.target as HTMLButtonElement).style.borderColor = 'var(--divider)' }}
           >
             {isImporting ? 'Importing…' : 'Import'}
           </button>
@@ -433,8 +433,8 @@ function DriveFileRow({
 function pillStyle(disabled: boolean): React.CSSProperties {
   return {
     background: 'none',
-    border: '1px solid var(--border)',
-    borderRadius: '20px',
+    border: '1px solid var(--divider)',
+    borderRadius: '2px',
     padding: '5px 14px',
     fontFamily: 'var(--mono)',
     fontSize: '11px',

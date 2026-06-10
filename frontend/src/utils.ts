@@ -36,6 +36,9 @@ export function buildMeta(entry: import('./api').DiaryEntry): string {
   const parts: string[] = []
   if (entry.context?.mood) parts.push(entry.context.mood)
   if (entry.context?.location) parts.push(entry.context.location)
+  if (entry.context?.companions && entry.context.companions.length > 0) {
+    parts.push(entry.context.companions.join(', '))
+  }
   if (entry.context?.notes) parts.push(entry.context.notes)
   return parts.join(' · ')
 }
