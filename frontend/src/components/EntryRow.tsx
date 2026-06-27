@@ -1,8 +1,10 @@
-import { useState, useRef } from 'react'
+import { useState, useRef, useEffect } from 'react'
 import type { DiaryEntry } from '../api'
 import { api } from '../api'
 import { Waveform } from './Waveform'
+import { InteractivePlayer } from './InteractivePlayer'
 import { formatDate, formatDuration, formatBytes, buildMeta } from '../utils'
+import { useSettings } from '../contexts/SettingsContext'
 
 interface Props {
   entry: DiaryEntry
@@ -21,6 +23,19 @@ export function EntryRow({ entry: initialEntry, onDeleted, onUpdated }: Props) {
   const [deleting, setDeleting] = useState(false)
   const audioRef = useRef<HTMLAudioElement | null>(null)
 
+  const { settings } = useSettings()
+  const [currentTime, setCurrentTime] = useState(0)
+  const [duration, setDuration] = useState(0)
+  const [seekToTime, setSeekToTime] = useState<number | null>(null)
+
+  useEffect(() => {
+    if (!open) {
+      setCurrentTime(0)
+      setDuration(0)
+      setSeekToTime(null)
+    }
+  }, [open])
+
   // Edit form state
   const [editTitle, setEditTitle]         = useState(entry.title ?? '')
   const [editMood, setEditMood]           = useState(entry.context?.mood ?? '')
@@ -31,16 +46,54 @@ export function EntryRow({ entry: initialEntry, onDeleted, onUpdated }: Props) {
   const meta = buildMeta(entry)
   const title = entry.title ?? 'Untitled recording'
 
+  // Global play coordination: pause when another entry starts playing
+  useEffect(() => {
+    function handleGlobalPlay(e: Event) {
+      const activeId = (e as CustomEvent).detail
+      if (activeId !== entry.id && playing) {
+        if (audioRef.current) {
+          audioRef.current.pause()
+        }
+        setPlaying(false)
+      }
+    }
+    window.addEventListener('sonochron:play', handleGlobalPlay)
+    return () => window.removeEventListener('sonochron:play', handleGlobalPlay)
+  }, [entry.id, playing])
+
+  // Stop audio on unmount (prevent ghost audio)
+  useEffect(() => {
+    return () => {
+      if (audioRef.current) {
+        audioRef.current.pause()
+        audioRef.current = null
+      }
+    }
+  }, [])
+
   function togglePlay(e: React.MouseEvent) {
     e.stopPropagation()
+    if (open) {
+      setPlaying(!playing)
+      if (!playing) {
+        window.dispatchEvent(new CustomEvent('sonochron:play', { detail: entry.id }))
+      }
+      return
+    }
     if (!audioRef.current) {
       const a = new Audio(api.getAudioUrl(entry.id))
       audioRef.current = a
       a.ontimeupdate = () => { if (a.duration) setProgress(a.currentTime / a.duration) }
       a.onended = () => { setPlaying(false); setProgress(0) }
     }
-    if (playing) { audioRef.current.pause(); setPlaying(false) }
-    else { audioRef.current.play(); setPlaying(true) }
+    if (playing) {
+      audioRef.current.pause()
+      setPlaying(false)
+    } else {
+      window.dispatchEvent(new CustomEvent('sonochron:play', { detail: entry.id }))
+      audioRef.current.play()
+      setPlaying(true)
+    }
   }
 
   async function handleSave() {
@@ -90,14 +143,40 @@ export function EntryRow({ entry: initialEntry, onDeleted, onUpdated }: Props) {
       <button
         id={`entry-${entry.id}`}
         className="entry-summary"
-        onClick={() => setOpen(o => !o)}
+        onClick={() => {
+          setOpen(o => {
+            const next = !o
+            if (next) {
+              if (audioRef.current) {
+                audioRef.current.pause()
+                setPlaying(false)
+              }
+            } else {
+              setPlaying(false)
+            }
+            return next
+          })
+        }}
         aria-expanded={open}
       >
         <span className="entry-date">{formatDate(entry.local_capture_time)}</span>
         <div className="entry-main">
-          <div className="entry-title">{title}</div>
-          <Waveform entryId={entry.id} />
-          {meta && <div className="entry-meta">{meta}</div>}
+          <div className="entry-title-row">
+            <span className="entry-title">{title}</span>
+            {entry.asset?.duration_ms && (
+              <span className="entry-duration">
+                {formatDuration(entry.asset.duration_ms)}
+              </span>
+            )}
+          </div>
+          <Waveform entryId={entry.id} progress={playing ? progress : 0} />
+          <div className="entry-meta-row">
+            {meta && <div className="entry-meta">{meta}</div>}
+            <div className="entry-badges">
+              {entry.asset?.bpm && <span className="entry-badge">{Math.round(entry.asset.bpm)} BPM</span>}
+              {entry.asset?.musical_key && <span className="entry-badge">{entry.asset.musical_key}</span>}
+            </div>
+          </div>
         </div>
         <button
           id={`play-${entry.id}`}
@@ -110,23 +189,81 @@ export function EntryRow({ entry: initialEntry, onDeleted, onUpdated }: Props) {
         </button>
       </button>
 
-      {open && (
-        <div className="entry-detail">
-          {/* Audio progress bar */}
-          {playing && (
-            <div className="audio-bar">
-              <div className="audio-progress">
-                <div className="audio-progress-fill" style={{ width: `${progress * 100}%` }} />
-              </div>
-            </div>
-          )}
+      {open && (() => {
+        const mood = entry.context?.mood
+        const isMoodEnabled = settings.moodThemesEnabled && mood
+        let moodClass = ''
 
-          {/* ── Read view ── */}
-          {!editing && (
-            <>
-              {entry.context?.notes && (
-                <p className="detail-notes">"{entry.context.notes}"</p>
-              )}
+        if (isMoodEnabled) {
+          const m = mood.toLowerCase().trim()
+          if (['calm', 'chill', 'peaceful'].includes(m)) {
+            moodClass = 'mood-calm mood-transition'
+          } else if (['sad', 'melancholy', 'blue'].includes(m)) {
+            moodClass = 'mood-sad mood-transition'
+          } else if (['anxious', 'restless', 'tense'].includes(m)) {
+            moodClass = 'mood-anxious mood-anxious-pulse mood-transition'
+          } else if (['happy', 'excited', 'energetic'].includes(m)) {
+            moodClass = 'mood-happy mood-transition'
+          } else {
+            moodClass = 'mood-default mood-transition'
+          }
+        }
+
+        const notes = entry.context?.notes || ''
+        const isTranscript = notes.startsWith('[Transcript] ')
+        const showKaraoke = settings.transcriptKaraokeEnabled && isTranscript
+        const transcriptText = isTranscript ? notes.substring(13) : ''
+        const words = showKaraoke ? transcriptText.split(/\s+/).filter(Boolean) : []
+
+        const audioDuration = duration || (entry.asset?.duration_ms ? entry.asset.duration_ms / 1000 : 0)
+        const activeWordIndex = showKaraoke && audioDuration > 0 && words.length > 0
+          ? Math.min(Math.floor(currentTime / (audioDuration / words.length)), words.length - 1)
+          : -1
+
+        const handleWordClick = (wordIndex: number) => {
+          if (audioDuration > 0 && words.length > 0) {
+            const targetTime = wordIndex * (audioDuration / words.length)
+            setSeekToTime(targetTime)
+          }
+        }
+
+        return (
+          <div className={`entry-detail ${moodClass}`}>
+            {/* Interactive Waveform Player */}
+            <InteractivePlayer
+              entryId={entry.id}
+              durationMs={entry.asset?.duration_ms ?? undefined}
+              playing={playing}
+              onPlayStateChange={setPlaying}
+              onTimeUpdate={setCurrentTime}
+              onDurationChange={setDuration}
+              seekToTime={seekToTime}
+              onSeekComplete={() => setSeekToTime(null)}
+            />
+
+            {/* ── Read view ── */}
+            {!editing && (
+              <>
+                {entry.context?.notes && (
+                  showKaraoke ? (
+                    <div className="karaoke-container">
+                      {words.map((word, i) => {
+                        const isActive = i === activeWordIndex
+                        return (
+                          <span
+                            key={i}
+                            className={`karaoke-word${isActive ? ' active' : ''}`}
+                            onClick={() => handleWordClick(i)}
+                          >
+                            {word}
+                          </span>
+                        )
+                      })}
+                    </div>
+                  ) : (
+                    <p className="detail-notes">"{entry.context.notes}"</p>
+                  )
+                )}
               <div className="detail-meta-grid">
                 {entry.context?.mood && (
                   <div className="detail-field"><label>Mood</label><span>{entry.context.mood}</span></div>
@@ -142,6 +279,12 @@ export function EntryRow({ entry: initialEntry, onDeleted, onUpdated }: Props) {
                 )}
                 {entry.asset?.byte_size && (
                   <div className="detail-field"><label>Size</label><span>{formatBytes(entry.asset.byte_size)}</span></div>
+                )}
+                {entry.asset?.bpm && (
+                  <div className="detail-field"><label>Tempo</label><span>{entry.asset.bpm} BPM</span></div>
+                )}
+                {entry.asset?.musical_key && (
+                  <div className="detail-field"><label>Key</label><span>{entry.asset.musical_key}</span></div>
                 )}
                 <div className="detail-field">
                   <label>Captured</label>
@@ -244,7 +387,7 @@ export function EntryRow({ entry: initialEntry, onDeleted, onUpdated }: Props) {
             </div>
           )}
         </div>
-      )}
+      )})()}
     </div>
   )
 }

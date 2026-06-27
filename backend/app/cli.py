@@ -24,6 +24,15 @@ def cmd_reindex(args):
     print(f"✅ Reindex complete: {count} entries indexed.")
 
 
+def cmd_analyze_assets(args):
+    """Manually trigger key/bpm analysis for any assets lacking it."""
+    import asyncio
+    from app.main import analyze_existing_assets
+    print("Triggering manual analysis of existing assets...")
+    asyncio.run(analyze_existing_assets())
+    print("✅ Analysis complete.")
+
+
 def cmd_check_entry(args):
     """Inspect a single diary entry's pipeline stage state."""
     from sqlmodel import Session
@@ -97,6 +106,13 @@ def main():
     )
     p_check.add_argument("entry_id", help="Diary entry UUID")
     p_check.set_defaults(func=cmd_check_entry)
+
+    # analyze-assets subcommand
+    p_analyze = subparsers.add_parser(
+        "analyze-assets",
+        help="Run audio key and BPM analysis on existing sound assets",
+    )
+    p_analyze.set_defaults(func=cmd_analyze_assets)
 
     args = parser.parse_args()
     args.func(args)

@@ -1,20 +1,15 @@
-import { useState, useRef, useEffect } from 'react'
+import { useState } from 'react'
 import { api } from '../api'
-import { uuid, formatRecordingTime } from '../utils'
+import { uuid } from '../utils'
+import { CaptureAudioSection } from '../components/CaptureAudioSection'
 
 interface Props {
   onSaved: () => void
 }
 
-type RecordState = 'idle' | 'recording' | 'stopped'
-
 export function CaptureView({ onSaved }: Props) {
-  const [recordState, setRecordState] = useState<RecordState>('idle')
-  const [elapsed, setElapsed] = useState(0)
   const [audioBlob, setAudioBlob] = useState<Blob | null>(null)
-  const [audioURL, setAudioURL] = useState<string | null>(null)
   const [uploadFile, setUploadFile] = useState<File | null>(null)
-  const [dragOver, setDragOver] = useState(false)
   const [submitting, setSubmitting] = useState(false)
   const [error, setError] = useState<string | null>(null)
 
@@ -25,57 +20,6 @@ export function CaptureView({ onSaved }: Props) {
   const [companions, setCompanions] = useState('')
   const [notes, setNotes] = useState('')
 
-  const mediaRef = useRef<MediaRecorder | null>(null)
-  const chunksRef = useRef<Blob[]>([])
-  const timerRef = useRef<ReturnType<typeof setInterval> | null>(null)
-
-  // Cleanup on unmount
-  useEffect(() => () => {
-    timerRef.current && clearInterval(timerRef.current)
-    audioURL && URL.revokeObjectURL(audioURL)
-  }, [audioURL])
-
-  async function startRecording() {
-    setError(null)
-    try {
-      const stream = await navigator.mediaDevices.getUserMedia({ audio: true })
-      const mr = new MediaRecorder(stream)
-      mediaRef.current = mr
-      chunksRef.current = []
-      mr.ondataavailable = e => { if (e.data.size > 0) chunksRef.current.push(e.data) }
-      mr.onstop = () => {
-        const blob = new Blob(chunksRef.current, { type: 'audio/webm' })
-        const url = URL.createObjectURL(blob)
-        setAudioBlob(blob)
-        setAudioURL(url)
-        stream.getTracks().forEach(t => t.stop())
-      }
-      mr.start()
-      setRecordState('recording')
-      setElapsed(0)
-      timerRef.current = setInterval(() => setElapsed(s => s + 1), 1000)
-    } catch {
-      setError('Microphone access denied. Please allow microphone permission and try again.')
-    }
-  }
-
-  function stopRecording() {
-    timerRef.current && clearInterval(timerRef.current)
-    mediaRef.current?.stop()
-    setRecordState('stopped')
-  }
-
-  function handleDrop(e: React.DragEvent) {
-    e.preventDefault()
-    setDragOver(false)
-    const f = e.dataTransfer.files[0]
-    if (f && f.type.startsWith('audio/')) {
-      setUploadFile(f)
-      setAudioURL(URL.createObjectURL(f))
-      setRecordState('stopped')
-    }
-  }
-
   async function handleSubmit(e: React.FormEvent) {
     e.preventDefault()
     setError(null)
@@ -83,7 +27,10 @@ export function CaptureView({ onSaved }: Props) {
     const file: File | null = uploadFile
       ?? (audioBlob ? new File([audioBlob], `recording-${Date.now()}.webm`, { type: 'audio/webm' }) : null)
 
-    if (!file) { setError('No audio to submit.'); return }
+    if (!file) {
+      setError('No audio to submit.')
+      return
+    }
 
     setSubmitting(true)
     try {
@@ -105,63 +52,18 @@ export function CaptureView({ onSaved }: Props) {
     }
   }
 
-  const dotClass = `record-dot-wrap${recordState === 'recording' ? ' recording' : ''}`
-
   return (
     <div className="capture-view" id="capture-view">
-      <div className="record-area">
-        {/* Record dot */}
-        <div
-          id="record-dot"
-          className={dotClass}
-          onClick={recordState === 'recording' ? stopRecording : startRecording}
-          title={recordState === 'recording' ? 'Stop recording' : 'Start recording'}
-          role="button"
-          aria-label={recordState === 'recording' ? 'Stop recording' : 'Start recording'}
-          tabIndex={0}
-          onKeyDown={e => e.key === 'Enter' && (recordState === 'recording' ? stopRecording() : startRecording())}
-        >
-          <div className="record-dot" />
-        </div>
-
-        <span className="record-label">
-          {recordState === 'idle' && 'Tap to record'}
-          {recordState === 'recording' && 'Recording — tap to stop'}
-          {recordState === 'stopped' && 'Recording complete'}
-        </span>
-
-        {recordState === 'recording' && (
-          <div className="record-timer">{formatRecordingTime(elapsed)}</div>
-        )}
-
-        {audioURL && recordState === 'stopped' && (
-          <audio controls src={audioURL} style={{ marginTop: '8px', height: '32px', opacity: 0.7 }} />
-        )}
-      </div>
-
-      {/* Upload zone — visible when idle and no blob */}
-      {recordState === 'idle' && (
-        <div
-          className={`upload-zone${dragOver ? ' drag-over' : ''}`}
-          style={{ width: '100%', maxWidth: '540px', marginBottom: '32px' }}
-          onDragOver={e => { e.preventDefault(); setDragOver(true) }}
-          onDragLeave={() => setDragOver(false)}
-          onDrop={handleDrop}
-          onClick={() => document.getElementById('file-input')?.click()}
-        >
-          <p>Drop an audio file here, or click to browse</p>
-          <input
-            id="file-input"
-            type="file"
-            accept="audio/*"
-            style={{ display: 'none' }}
-            onChange={e => {
-              const f = e.target.files?.[0]
-              if (f) { setUploadFile(f); setAudioURL(URL.createObjectURL(f)); setRecordState('stopped') }
-            }}
-          />
-        </div>
-      )}
+      <CaptureAudioSection
+        onAudioReady={(blob, file) => {
+          setAudioBlob(blob)
+          setUploadFile(file)
+        }}
+        onReset={() => {
+          setAudioBlob(null)
+          setUploadFile(null)
+        }}
+      />
 
       {/* Metadata form — always visible */}
       <form className="capture-form" onSubmit={handleSubmit} id="capture-form">
@@ -204,14 +106,14 @@ export function CaptureView({ onSaved }: Props) {
         </div>
 
         {error && (
-          <p style={{ fontFamily: 'var(--mono)', fontSize: '12px', color: '#c0392b' }}>{error}</p>
+          <p style={{ fontFamily: 'var(--mono)', fontSize: '12px', color: '#c0392b', textAlign: 'center', marginTop: '12px' }}>{error}</p>
         )}
 
         <button
           id="submit-entry"
           type="submit"
           className="submit-btn"
-          disabled={submitting || (recordState === 'idle' && !uploadFile)}
+          disabled={submitting || (!audioBlob && !uploadFile)}
         >
           {submitting ? 'Saving…' : 'Save entry'}
         </button>
@@ -219,3 +121,4 @@ export function CaptureView({ onSaved }: Props) {
     </div>
   )
 }
+

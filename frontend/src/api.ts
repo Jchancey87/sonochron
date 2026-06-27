@@ -16,6 +16,8 @@ export interface SampleAsset {
   checksum_sha256: string | null
   duration_ms: number | null
   byte_size: number | null
+  bpm: number | null
+  musical_key: string | null
 }
 
 export interface DiaryEntry {

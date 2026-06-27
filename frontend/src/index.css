@@ -162,19 +162,39 @@ nav button.active {
 
 /* ── Waveform ── */
 .waveform {
-  height: 28px;
+  height: 36px;
   margin: 8px 0 10px;
   display: flex;
-  align-items: center;
-  gap: 2px;
+  align-items: center; /* vertical center for dual-sided style */
+  gap: 1px;
 }
 
 .waveform-bar {
   width: 2px;
-  background: var(--amber);
+  background: var(--ink-faint); /* muted default ink */
   border-radius: 1px;
-  opacity: 0.7;
+  opacity: 0.25;
   flex-shrink: 0;
+  transition: background-color 0.15s, opacity 0.15s;
+}
+
+.waveform-bar.active {
+  background: var(--amber); /* amber when played/active */
+  opacity: 0.95;
+}
+
+.entry-badge {
+  display: inline-flex;
+  align-items: center;
+  font-family: var(--mono);
+  font-size: 10px;
+  padding: 1px 6px;
+  border: 1px solid var(--divider);
+  border-radius: 2px;
+  color: var(--ink-muted);
+  background: rgba(0, 0, 0, 0.02);
+  text-transform: uppercase;
+  letter-spacing: 0.02em;
 }
 
 /* ── Play button ── */
@@ -575,3 +595,546 @@ nav button.active {
 .edit-form .form-field label {
   font-size: 10px;
 }
+
+/* ── New Layout Components ── */
+.timeline-nav {
+  display: flex;
+  gap: 24px;
+  flex-wrap: wrap;
+  margin-bottom: 8px;
+}
+
+.timeline-nav-year-group {
+  display: flex;
+  align-items: center;
+}
+
+.timeline-nav-months {
+  display: flex;
+  align-items: center;
+}
+
+.year-heading {
+  cursor: pointer;
+  display: inline-block;
+  margin-right: 12px;
+}
+
+.year-heading.active {
+  color: var(--amber);
+}
+
+.month-pill {
+  background: none;
+  border: none;
+  cursor: pointer;
+  font-family: var(--mono);
+  font-size: 11px;
+  letter-spacing: 0.1em;
+  text-transform: uppercase;
+  color: var(--ink-faint);
+  margin-right: 14px;
+  padding: 2px 0;
+  border-bottom: 1px solid transparent;
+  transition: color 0.2s;
+}
+
+.month-pill:hover {
+  color: var(--ink);
+}
+
+.month-pill.active {
+  color: var(--amber);
+  border-bottom-color: var(--amber);
+}
+
+.entry-title-row {
+  display: flex;
+  justify-content: space-between;
+  align-items: baseline;
+  flex-wrap: wrap;
+  gap: 8px;
+}
+
+.entry-duration {
+  font-family: var(--mono);
+  font-size: 11px;
+  color: var(--ink-faint);
+}
+
+.entry-meta-row {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  flex-wrap: wrap;
+  gap: 8px;
+}
+
+.entry-badges {
+  display: flex;
+  gap: 6px;
+  flex-shrink: 0;
+}
+
+.search-score {
+  margin-left: 16px;
+  color: var(--amber);
+  font-family: var(--mono);
+  font-size: 10px;
+}
+
+.entry-action-area {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  align-items: flex-end;
+}
+
+.search-index {
+  font-family: var(--mono);
+  font-size: 10px;
+  color: var(--ink-faint);
+  letter-spacing: 0.05em;
+}
+
+/* ── Interactive Waveform Player ── */
+.interactive-player {
+  background: rgba(28, 26, 24, 0.03);
+  border: 1px solid var(--divider);
+  border-radius: 4px;
+  padding: 16px;
+  margin-bottom: 24px;
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+}
+
+.player-waveform-wrap {
+  background: rgba(0, 0, 0, 0.015);
+  border-radius: 3px;
+  padding: 8px 8px 4px;
+}
+
+.player-waveform {
+  width: 100%;
+  cursor: pointer;
+}
+
+.player-timeline {
+  width: 100%;
+  margin-top: 4px;
+}
+
+.player-controls {
+  display: flex;
+  align-items: center;
+  gap: 16px;
+  flex-wrap: wrap;
+}
+
+.player-controls button,
+.capture-preview-controls button {
+  font-family: var(--mono);
+  font-size: 11px;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+  background: transparent;
+  border: 1px solid var(--divider);
+  border-radius: 2px;
+  padding: 6px 12px;
+  color: var(--ink-muted);
+  cursor: pointer;
+  transition: border-color 0.2s, color 0.2s, background 0.2s;
+}
+
+.player-controls button:hover,
+.capture-preview-controls button:hover {
+  border-color: var(--ink);
+  color: var(--ink);
+  background: rgba(0, 0, 0, 0.02);
+}
+
+.player-time {
+  font-family: var(--mono);
+  font-size: 11px;
+  color: var(--ink-muted);
+  flex-grow: 1;
+}
+
+.player-zoom-control {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+
+.player-zoom-control label {
+  font-family: var(--mono);
+  font-size: 11px;
+  color: var(--ink-faint);
+  text-transform: uppercase;
+}
+
+.player-zoom-control input[type="range"] {
+  width: 100px;
+  accent-color: var(--amber);
+  cursor: pointer;
+  height: 4px;
+  background: var(--divider);
+  border-radius: 2px;
+  outline: none;
+}
+
+/* ── Capture Waveform & Record ── */
+.capture-audio-section {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  width: 100%;
+}
+
+.capture-waveform-wrap {
+  background: rgba(28, 26, 24, 0.03);
+  border: 1px solid var(--divider);
+  border-radius: 4px;
+  padding: 16px;
+  box-sizing: border-box;
+}
+
+.capture-waveform {
+  width: 100%;
+  border-radius: 3px;
+  background: rgba(0, 0, 0, 0.015);
+  padding: 8px;
+}
+
+.capture-audio-filename {
+  font-family: var(--mono);
+  font-size: 11px;
+  color: var(--ink-muted);
+  text-align: center;
+  margin-top: 8px;
+  word-break: break-all;
+}
+
+.capture-preview-controls {
+  display: flex;
+  justify-content: center;
+  gap: 12px;
+  margin-top: 16px;
+}
+
+.preview-btn-reset {
+  color: #c0392b !important;
+  border-color: rgba(192, 57, 43, 0.3) !important;
+}
+
+.preview-btn-reset:hover {
+  background: rgba(192, 57, 43, 0.05) !important;
+  border-color: #c0392b !important;
+}
+
+/* ── Mobile-First Responsive Design ── */
+@media (max-width: 768px) {
+  /* General Layout */
+  .app {
+    padding: 0 16px 60px;
+  }
+
+  nav {
+    gap: 16px;
+    padding: 24px 0 20px;
+    margin-bottom: 24px;
+  }
+
+  nav button {
+    font-size: 11px;
+    letter-spacing: 0.08em;
+    padding: 6px 4px;
+  }
+
+  /* Horizontally Scrollable Filters */
+  .timeline-nav {
+    flex-wrap: nowrap;
+    overflow-x: auto;
+    -webkit-overflow-scrolling: touch;
+    gap: 16px;
+    padding-bottom: 12px;
+    margin-bottom: 16px;
+    scrollbar-width: none; /* Firefox */
+  }
+
+  .timeline-nav::-webkit-scrollbar {
+    display: none; /* Safari/Chrome */
+  }
+
+  .timeline-nav-year-group {
+    flex-shrink: 0;
+  }
+
+  /* Stacking Entry Rows */
+  .entry-summary {
+    display: grid;
+    grid-template-columns: 1fr auto;
+    grid-template-areas: 
+      "date action"
+      "main action";
+    gap: 4px 12px;
+    padding: 16px;
+  }
+
+  .entry-date {
+    grid-area: date;
+    padding-top: 0;
+    margin-bottom: 2px;
+  }
+
+  .entry-main {
+    grid-area: main;
+    width: 100%;
+  }
+
+  .play-btn, .entry-action-area {
+    grid-area: action;
+    align-self: center;
+    margin-top: 0;
+    width: 36px;
+    height: 36px;
+    padding: 0;
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    font-size: 14px;
+  }
+
+  .play-btn {
+    border-radius: 50%;
+    padding-top: 0;
+  }
+
+  /* Full-width Detail Expansion */
+  .entry-detail {
+    padding: 20px 16px 24px;
+  }
+
+  .detail-meta-grid {
+    grid-template-columns: 1fr;
+    gap: 12px;
+  }
+
+  .detail-actions {
+    flex-wrap: wrap;
+    gap: 8px;
+  }
+
+  .detail-actions button {
+    flex: 1 1 calc(50% - 4px);
+    min-width: 110px;
+    padding: 10px 14px;
+    text-align: center;
+  }
+
+  /* Form Layout */
+  .form-row {
+    grid-template-columns: 1fr;
+    gap: 16px;
+  }
+
+  .submit-btn {
+    width: 100%;
+    text-align: center;
+    padding: 14px 28px;
+  }
+
+  /* Immersive/Tactile Recorder Controls */
+  .record-dot-wrap {
+    width: 72px;
+    height: 72px;
+  }
+
+  .record-dot {
+    width: 24px;
+    height: 24px;
+    border-radius: 4px;
+  }
+
+  .record-timer {
+    font-size: 28px;
+  }
+
+  /* Waveform container safety */
+  .waveform {
+    overflow: hidden;
+    justify-content: flex-start;
+  }
+}
+
+/* ============================================================
+   Settings View, Mood Themes, Karaoke & Spectrogram Styles
+   ============================================================ */
+
+.settings-view {
+  padding-top: 12px;
+}
+
+.settings-heading {
+  font-family: var(--serif);
+  font-size: 32px;
+  font-weight: 400;
+  margin-bottom: 24px;
+}
+
+.settings-group {
+  display: flex;
+  flex-direction: column;
+  gap: 20px;
+}
+
+.settings-item {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  padding: 16px 20px;
+  background: var(--bg-entry);
+  border-radius: 6px;
+  border: 1px solid var(--divider);
+}
+
+.settings-info {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+  max-width: 80%;
+}
+
+.settings-label {
+  font-family: var(--serif);
+  font-size: 20px;
+  font-weight: 500;
+  color: var(--ink);
+  cursor: pointer;
+}
+
+.settings-desc {
+  font-family: var(--mono);
+  font-size: 11px;
+  color: var(--ink-muted);
+}
+
+.settings-control {
+  display: flex;
+  align-items: center;
+}
+
+/* Premium Toggle Switch style */
+.settings-toggle {
+  position: relative;
+  appearance: none;
+  width: 44px;
+  height: 22px;
+  background-color: var(--ink-faint);
+  border-radius: 11px;
+  outline: none;
+  cursor: pointer;
+  transition: background-color 0.3s;
+  border: none;
+}
+
+.settings-toggle:checked {
+  background-color: var(--amber);
+}
+
+.settings-toggle::before {
+  content: "";
+  position: absolute;
+  width: 18px;
+  height: 18px;
+  border-radius: 50%;
+  top: 2px;
+  left: 2px;
+  background-color: var(--bg);
+  transition: transform 0.3s;
+}
+
+.settings-toggle:checked::before {
+  transform: translateX(22px);
+}
+
+/* Mood Themes Styles */
+.mood-transition {
+  transition: background-color 0.5s ease-in-out !important;
+}
+
+.mood-calm {
+  background-color: #E4EDE4 !important;
+}
+
+.mood-sad {
+  background-color: #DFE6EB !important;
+}
+
+.mood-anxious {
+  background-color: #EFEBE4 !important;
+}
+
+.mood-happy {
+  background-color: #F5ECD5 !important;
+}
+
+.mood-default {
+  background-color: #EDE7D9 !important;
+}
+
+@keyframes mood-pulse {
+  0% {
+    background-color: #EFEBE4;
+  }
+  50% {
+    background-color: #E4DEC5; /* slightly warmer/tense shift */
+  }
+  100% {
+    background-color: #EFEBE4;
+  }
+}
+
+.mood-anxious-pulse {
+  animation: mood-pulse 4s infinite ease-in-out !important;
+}
+
+/* Transcript Karaoke Styles */
+.karaoke-container {
+  margin-bottom: 20px;
+  line-height: 1.8;
+}
+
+.karaoke-word {
+  display: inline-block;
+  font-family: var(--serif);
+  font-size: 18px;
+  margin-right: 6px;
+  padding: 2px 4px;
+  border-radius: 3px;
+  cursor: pointer;
+  transition: background-color 0.2s, color 0.2s;
+  color: var(--ink-muted);
+}
+
+.karaoke-word:hover {
+  background-color: rgba(28, 26, 24, 0.08);
+  color: var(--ink);
+}
+
+.karaoke-word.active {
+  background-color: var(--amber);
+  color: var(--bg);
+  font-weight: 500;
+}
+
+/* Spectrogram Styles */
+.player-spectrogram {
+  margin-top: 10px;
+  background: #000;
+  border-radius: 4px;
+  overflow: hidden;
+}
+
+

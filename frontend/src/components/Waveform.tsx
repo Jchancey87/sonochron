@@ -5,9 +5,10 @@ import { fakeWaveform } from '../utils'
 interface Props {
   entryId: string
   bars?: number
+  progress?: number
 }
 
-export function Waveform({ entryId, bars = 60 }: Props) {
+export function Waveform({ entryId, bars = 180, progress = 0 }: Props) {
   const [heights, setHeights] = useState<number[]>(() => fakeWaveform(entryId, bars))
   const [real, setReal] = useState(false)
 
@@ -15,7 +16,7 @@ export function Waveform({ entryId, bars = 60 }: Props) {
     let cancelled = false
     api.getWaveform(entryId, bars)
       .then(data => {
-        if (!cancelled && data.peaks.length > 0) {
+        if (!cancelled && data.peaks.length > 0 && data.peaks.some(p => p > 0)) {
           setHeights(data.peaks)
           setReal(true)
         }
@@ -26,13 +27,15 @@ export function Waveform({ entryId, bars = 60 }: Props) {
     return () => { cancelled = true }
   }, [entryId, bars])
 
+  const activeCount = Math.round(progress * heights.length)
+
   return (
     <div className="waveform" aria-hidden="true" title={real ? 'Real waveform' : 'Placeholder waveform'}>
       {heights.map((h, i) => (
         <div
           key={i}
-          className="waveform-bar"
-          style={{ height: `${Math.round(h * 28)}px` }}
+          className={`waveform-bar${i < activeCount ? ' active' : ''}`}
+          style={{ height: `${Math.round(h * 36)}px` }}
         />
       ))}
     </div>

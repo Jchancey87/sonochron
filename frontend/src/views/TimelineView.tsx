@@ -36,41 +36,30 @@ export function TimelineView() {
     <div id="timeline-view">
       {/* Year/month nav pills — minimal monospace */}
       {timeline.length > 0 && (
-        <div style={{ display: 'flex', gap: '24px', flexWrap: 'wrap', marginBottom: '8px' }}>
+        <div className="timeline-nav">
           {timeline.map(yr => (
-            <div key={yr.year}>
+            <div key={yr.year} className="timeline-nav-year-group">
               <span
-                className="year-heading"
-                style={{ cursor: 'pointer', display: 'inline-block', marginRight: '12px' }}
+                className={`year-heading ${selectedYear === yr.year ? 'active' : ''}`}
                 onClick={() => { setSelectedYear(yr.year); setSelectedMonth(null) }}
               >
                 {yr.year}
               </span>
-              {yr.months.map(mo => (
-                <button
-                  key={mo.id}
-                  id={`month-${yr.year}-${mo.month}`}
-                  onClick={() => { setSelectedYear(yr.year); setSelectedMonth(mo.month) }}
-                  style={{
-                    background: 'none',
-                    border: 'none',
-                    cursor: 'pointer',
-                    fontFamily: 'var(--mono)',
-                    fontSize: '11px',
-                    letterSpacing: '0.1em',
-                    textTransform: 'uppercase',
-                    color: selectedYear === yr.year && selectedMonth === mo.month
-                      ? 'var(--amber)' : 'var(--ink-faint)',
-                    marginRight: '14px',
-                    padding: '2px 0',
-                    borderBottom: selectedYear === yr.year && selectedMonth === mo.month
-                      ? '1px solid var(--amber)' : '1px solid transparent',
-                    transition: 'color 0.2s',
-                  }}
-                >
-                  {MONTHS[mo.month - 1].slice(0, 3)} ({mo.entry_count})
-                </button>
-              ))}
+              <div className="timeline-nav-months">
+                {yr.months.map(mo => {
+                  const isActive = selectedYear === yr.year && selectedMonth === mo.month
+                  return (
+                    <button
+                      key={mo.id}
+                      id={`month-${yr.year}-${mo.month}`}
+                      onClick={() => { setSelectedYear(yr.year); setSelectedMonth(mo.month) }}
+                      className={`month-pill ${isActive ? 'active' : ''}`}
+                    >
+                      {MONTHS[mo.month - 1].slice(0, 3)} ({mo.entry_count})
+                    </button>
+                  )
+                })}
+              </div>
             </div>
           ))}
         </div>

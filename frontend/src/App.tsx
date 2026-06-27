@@ -3,8 +3,9 @@ import { TimelineView } from './views/TimelineView'
 import { CaptureView } from './views/CaptureView'
 import { SearchView } from './views/SearchView'
 import { DriveImportView } from './views/DriveImportView'
+import { SettingsView } from './views/SettingsView'
 
-type Tab = 'capture' | 'timeline' | 'search' | 'import'
+type Tab = 'capture' | 'timeline' | 'search' | 'import' | 'settings'
 
 export default function App() {
   const [tab, setTab] = useState<Tab>('timeline')
@@ -38,14 +39,21 @@ export default function App() {
           className={tab === 'import' ? 'active' : ''}
           onClick={() => setTab('import')}
         >Import</button>
+        <button
+          id="nav-settings"
+          className={tab === 'settings' ? 'active' : ''}
+          onClick={() => setTab('settings')}
+        >Settings</button>
       </nav>
 
       {tab === 'timeline' && <TimelineView />}
       {tab === 'capture'  && <CaptureView onSaved={() => { showToast('Entry saved'); setTab('timeline') }} />}
       {tab === 'search'   && <SearchView />}
       {tab === 'import'   && <DriveImportView />}
+      {tab === 'settings' && <SettingsView />}
 
       <div className={`toast${toast ? ' visible' : ''}`}>{toast}</div>
     </div>
   )
 }
+

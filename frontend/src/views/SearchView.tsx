@@ -152,33 +152,21 @@ function SearchEntryRow({
         className="entry-summary"
         onClick={handleToggle}
         disabled={loading}
-        style={{
-          cursor: 'pointer',
-          width: '100%',
-          border: 'none',
-          background: 'none',
-          textAlign: 'left',
-        }}
       >
-        <span className="entry-date" style={{ paddingTop: '5px' }}>
+        <span className="entry-date">
           {r.year && r.month ? `${MONTHS[r.month - 1].slice(0, 3).toUpperCase()} ${r.year}` : '—'}
         </span>
         <div className="entry-main">
           <div className="entry-title">{r.title ?? 'Untitled'}</div>
           <div className="entry-meta">
             {[r.mood, r.location].filter(Boolean).join(' · ')}
-            <span style={{ marginLeft: '16px', color: 'var(--amber)', fontFamily: 'var(--mono)', fontSize: '10px' }}>
+            <span className="search-score">
               score {r.score.toFixed(3)}
             </span>
           </div>
         </div>
-        <div style={{ display: 'flex', flexDirection: 'column', gap: '6px', alignItems: 'flex-end' }}>
-          <span style={{
-            fontFamily: 'var(--mono)',
-            fontSize: '10px',
-            color: 'var(--ink-faint)',
-            letterSpacing: '0.05em',
-          }}>
+        <div className="entry-action-area">
+          <span className="search-index">
             {loading ? '...' : `#${index + 1}`}
           </span>
         </div>

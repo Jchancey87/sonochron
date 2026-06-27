@@ -26,11 +26,63 @@ from app.database import (
 from app.search import search_text, search_similar_audio, ensure_collections
 
 
+
+async def analyze_existing_assets():
+    """Scans and analyzes existing audio assets that lack BPM or Key data."""
+    import logging
+    import asyncio
+    logger = logging.getLogger("sonochron.startup")
+    logger.info("Starting background analysis of existing assets...")
+    
+    from sqlmodel import Session, select
+    from app.database import engine, SampleAsset
+    from app.storage import LocalStorageProvider
+    from app.ml import analyze_audio_properties
+    
+    storage = LocalStorageProvider(base_dir="backend/storage/raw")
+    
+    with Session(engine) as session:
+        statement = select(SampleAsset).where(
+            (SampleAsset.bpm == None) | (SampleAsset.musical_key == None)
+        )
+        assets_to_analyze = session.exec(statement).all()
+        
+        if not assets_to_analyze:
+            logger.info("No existing assets need analysis.")
+            return
+            
+        logger.info("Found %d assets needing analysis.", len(assets_to_analyze))
+        
+        for asset in assets_to_analyze:
+            if not asset.filepath or (asset.byte_size is not None and asset.byte_size == 0):
+                continue
+                
+            try:
+                async with storage.local_filepath(asset.filepath) as local_path:
+                    loop = asyncio.get_event_loop()
+                    props = await loop.run_in_executor(
+                        None, lambda: analyze_audio_properties(str(local_path))
+                    )
+                    
+                    asset.duration_ms = props.get("duration_ms")
+                    asset.bpm = props.get("bpm")
+                    asset.musical_key = props.get("musical_key")
+                    session.add(asset)
+                    session.commit()
+                    logger.info("Successfully analyzed existing asset %s: bpm=%s, key=%s", asset.filename, asset.bpm, asset.musical_key)
+            except Exception as e:
+                logger.error("Failed to analyze existing asset %s: %s", asset.filename, e)
+
+
 @asynccontextmanager
 async def lifespan(app: FastAPI):
     """Initialize DB tables and Qdrant collections on startup and start background loop."""
     init_db()
     ensure_collections()
+
+    # Start background analysis of existing assets
+    import asyncio
+    asyncio.create_task(analyze_existing_assets())
 
     # Start Drive auto-sync background loop
     from app.services.drive_service import start_drive_sync_loop
@@ -73,6 +125,8 @@ class SampleAssetOut(BaseModel):
     checksum_sha256: Optional[str] = None
     duration_ms: Optional[int] = None
     byte_size: Optional[int] = None
+    bpm: Optional[float] = None
+    musical_key: Optional[str] = None
     model_config = {"from_attributes": True}
 
 
@@ -302,7 +356,7 @@ async def get_waveform(
     except Exception as exc:
         import logging
         logging.getLogger("sonochron.api").warning("Waveform extraction failed: %s", exc)
-        peaks = [0.0] * bars
+        peaks = []
 
     return WaveformOut(entry_id=entry_id, peaks=peaks, num_bars=len(peaks))
 
@@ -519,6 +573,8 @@ def _entry_to_out(entry: DiaryEntry, session: Session) -> DiaryEntryOut:
             checksum_sha256=getattr(asset, "checksum_sha256", None),
             duration_ms=getattr(asset, "duration_ms", None),
             byte_size=getattr(asset, "byte_size", None),
+            bpm=getattr(asset, "bpm", None),
+            musical_key=getattr(asset, "musical_key", None),
         )
 
     return DiaryEntryOut(

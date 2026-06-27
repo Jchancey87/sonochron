@@ -150,6 +150,8 @@ class SampleAsset(SQLModel, table=True):
     checksum_sha256: Optional[str] = Field(default=None)
     byte_size: Optional[int] = Field(default=None)
     duration_ms: Optional[int] = Field(default=None)
+    bpm: Optional[float] = Field(default=None)
+    musical_key: Optional[str] = Field(default=None)
     
     # Relationships
     entry: DiaryEntry = Relationship(back_populates="asset")
@@ -175,6 +177,22 @@ class IdempotencyKey(SQLModel, table=True):
 def init_db():
     """Create all schema tables in database."""
     SQLModel.metadata.create_all(engine)
+    
+    # Run manual migration to add bpm and musical_key columns to sample_assets if they don't exist
+    from sqlalchemy import text
+    with Session(engine) as session:
+        # bpm column
+        try:
+            session.exec(text("ALTER TABLE sample_assets ADD COLUMN bpm DOUBLE PRECISION;"))
+            session.commit()
+        except Exception:
+            session.rollback()
+        # musical_key column
+        try:
+            session.exec(text("ALTER TABLE sample_assets ADD COLUMN musical_key VARCHAR;"))
+            session.commit()
+        except Exception:
+            session.rollback()
 
 
 def get_session():

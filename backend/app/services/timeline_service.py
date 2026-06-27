@@ -385,6 +385,8 @@ def entry_to_dict(entry: DiaryEntry) -> Dict[str, Any]:
             "checksum_sha256": getattr(asset, "checksum_sha256", None),
             "duration_ms": getattr(asset, "duration_ms", None),
             "byte_size": getattr(asset, "byte_size", None),
+            "bpm": getattr(asset, "bpm", None),
+            "musical_key": getattr(asset, "musical_key", None),
         }
 
     return {

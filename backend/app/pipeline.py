@@ -78,22 +78,51 @@ def _stage_validate(session: Session, entry: DiaryEntry) -> bool:
     """
     Stage: validated
     Checks that the SampleAsset exists and has non-zero byte_size.
+    Also extracts audio properties (duration_ms, bpm, musical_key) and updates SampleAsset.
     """
-    asset = session.exec(
-        select(SampleAsset).where(SampleAsset.entry_id == entry.id)
-    ).first()
+    import asyncio
 
-    if not asset:
-        _mark_failed(session, entry, "No SampleAsset found for entry.")
-        return False
+    async def _run():
+        asset = session.exec(
+            select(SampleAsset).where(SampleAsset.entry_id == entry.id)
+        ).first()
 
-    byte_size = getattr(asset, "byte_size", None)
-    if byte_size is not None and byte_size == 0:
-        _mark_failed(session, entry, "Empty audio file — byte_size is 0.")
-        return False
+        if not asset:
+            _mark_failed(session, entry, "No SampleAsset found for entry.")
+            return False
 
-    _advance_stage(session, entry, "validated")
-    return True
+        byte_size = getattr(asset, "byte_size", None)
+        if byte_size is not None and byte_size == 0:
+            _mark_failed(session, entry, "Empty audio file — byte_size is 0.")
+            return False
+
+        # Extract audio properties if a valid filepath is present
+        if asset.filepath:
+            try:
+                async with storage.local_filepath(asset.filepath) as local_path:
+                    from app.ml import analyze_audio_properties
+                    loop = asyncio.get_event_loop()
+                    props = await loop.run_in_executor(
+                        None, lambda: analyze_audio_properties(str(local_path))
+                    )
+                    asset.duration_ms = props.get("duration_ms")
+                    asset.bpm = props.get("bpm")
+                    asset.musical_key = props.get("musical_key")
+                    session.add(asset)
+                    session.commit()
+                    logger.info(
+                        "Audio analyzed for entry %s: duration_ms=%s, bpm=%s, key=%s",
+                        entry.id, asset.duration_ms, asset.bpm, asset.musical_key
+                    )
+            except FileNotFoundError:
+                logger.warning("Audio file missing for validation: %s", asset.filepath)
+            except Exception as exc:
+                logger.error("Audio analysis failed during validation for entry %s: %s", entry.id, exc)
+
+        _advance_stage(session, entry, "validated")
+        return True
+
+    return asyncio.run(_run())
 
 
 def _stage_detect_speech(session: Session, entry: DiaryEntry) -> bool:

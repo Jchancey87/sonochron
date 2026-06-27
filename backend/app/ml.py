@@ -382,3 +382,94 @@ def extract_waveform_peaks(filepath: str, num_bars: int = 100) -> List[float]:
     except Exception as exc:
         logger.error("Waveform extraction failed: %s", exc)
         return [0.0] * num_bars
+
+
+# ---------------------------------------------------------------------------
+# Audio analysis: Duration, BPM, Key
+# ---------------------------------------------------------------------------
+
+def analyze_audio_properties(filepath: str) -> dict:
+    """
+    Extract properties of an audio file: duration_ms, bpm, and musical_key.
+    Uses librosa.
+    """
+    if not Path(filepath).exists():
+        logger.warning("analyze_audio_properties: file not found: %s", filepath)
+        return {
+            "duration_ms": 0,
+            "bpm": None,
+            "musical_key": None
+        }
+
+    try:
+        import librosa
+        import numpy as np
+
+        # Load audio (mono, sr=22050 is fast and standard)
+        y, sr = librosa.load(filepath, sr=22050, mono=True)
+        
+        duration = librosa.get_duration(y=y, sr=sr)
+        duration_ms = int(duration * 1000)
+        
+        bpm = None
+        musical_key = None
+        
+        # Estimate tempo (BPM)
+        try:
+            tempo, _ = librosa.beat.beat_track(y=y, sr=sr)
+            if isinstance(tempo, (np.ndarray, list)):
+                bpm_val = float(tempo[0]) if len(tempo) > 0 else 0.0
+            else:
+                bpm_val = float(tempo)
+            if bpm_val > 0:
+                bpm = round(bpm_val, 1)
+        except Exception as e:
+            logger.warning("BPM estimation failed for %s: %s", filepath, e)
+            
+        # Estimate musical key
+        try:
+            chroma = librosa.feature.chroma_cqt(y=y, sr=sr)
+            chroma_mean = np.mean(chroma, axis=1)
+            
+            # Krumhansl-Schmuckler templates
+            major_template = np.array([6.35, 2.23, 3.48, 2.33, 4.38, 4.09, 2.52, 5.19, 2.39, 3.66, 2.29, 2.88])
+            minor_template = np.array([6.33, 2.68, 3.52, 5.38, 2.60, 3.53, 2.54, 4.75, 3.98, 2.69, 3.34, 3.17])
+            
+            major_template /= np.linalg.norm(major_template)
+            minor_template /= np.linalg.norm(minor_template)
+            
+            keys = ['C', 'C#', 'D', 'D#', 'E', 'F', 'F#', 'G', 'G#', 'A', 'A#', 'B']
+            
+            best_corr = -1.0
+            best_key = None
+            
+            for i in range(12):
+                major_shifted = np.roll(major_template, i)
+                minor_shifted = np.roll(minor_template, i)
+                
+                corr_major = np.corrcoef(chroma_mean, major_shifted)[0, 1]
+                corr_minor = np.corrcoef(chroma_mean, minor_shifted)[0, 1]
+                
+                if corr_major > best_corr:
+                    best_corr = corr_major
+                    best_key = f"{keys[i]} Major"
+                if corr_minor > best_corr:
+                    best_corr = corr_minor
+                    best_key = f"{keys[i]} Minor"
+            
+            musical_key = best_key
+        except Exception as e:
+            logger.warning("Key estimation failed for %s: %s", filepath, e)
+            
+        return {
+            "duration_ms": duration_ms,
+            "bpm": bpm,
+            "musical_key": musical_key
+        }
+    except Exception as exc:
+        logger.error("analyze_audio_properties failed for %s: %s", filepath, exc)
+        return {
+            "duration_ms": 0,
+            "bpm": None,
+            "musical_key": None
+        }
