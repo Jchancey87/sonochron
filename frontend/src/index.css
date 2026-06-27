@@ -1137,4 +1137,307 @@ nav button.active {
   overflow: hidden;
 }
 
+/* ============================================================
+   Sound Map Styles
+   ============================================================ */
+
+.soundmap-view {
+  display: flex;
+  flex-direction: column;
+  gap: 16px;
+  animation: fadeIn 0.4s ease-out;
+}
+
+.soundmap-header {
+  margin-bottom: 8px;
+}
+
+.soundmap-title {
+  font-family: var(--serif);
+  font-size: 32px;
+  font-weight: 400;
+  color: var(--ink);
+  margin-bottom: 6px;
+}
+
+.soundmap-subtitle {
+  font-family: var(--mono);
+  font-size: 11px;
+  color: var(--ink-muted);
+  text-transform: uppercase;
+  letter-spacing: 0.05em;
+  line-height: 1.4;
+}
+
+.soundmap-container {
+  position: relative;
+  width: 100%;
+  height: 550px;
+  background-color: var(--bg-entry);
+  border: 1px solid var(--divider);
+  border-radius: 8px;
+  overflow: hidden;
+  box-shadow: inset 0 2px 8px rgba(28, 26, 24, 0.04);
+  /* grain pattern for map container background */
+  background-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='100' height='100'%3E%3Cfilter id='n'%3E%3CfeTurbulence type='fractalNoise' baseFrequency='0.9' numOctaves='3' stitchTiles='stitch'/%3E%3C/filter%3E%3Crect width='100' height='100' filter='url(%23n)' opacity='0.02'/%3E%3C/svg%3E");
+}
+
+.soundmap-canvas {
+  width: 100%;
+  height: 100%;
+  display: block;
+}
+
+/* Nodes styling */
+.soundmap-node {
+  cursor: pointer;
+  transition: stroke-width 0.2s, stroke 0.2s;
+  filter: drop-shadow(0 2px 4px rgba(28, 26, 24, 0.08));
+}
+
+.soundmap-node:hover {
+  stroke: var(--ink) !important;
+  stroke-width: 2.5px !important;
+}
+
+/* Floating controls toolbar */
+.soundmap-controls {
+  position: absolute;
+  top: 16px;
+  left: 16px;
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  background-color: rgba(245, 240, 232, 0.92);
+  backdrop-filter: blur(8px);
+  border: 1px solid var(--divider);
+  border-radius: 6px;
+  padding: 6px 12px;
+  box-shadow: 0 4px 16px rgba(28, 26, 24, 0.08);
+  z-index: 10;
+}
+
+.control-group {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+
+.control-label {
+  font-family: var(--mono);
+  font-size: 10px;
+  text-transform: uppercase;
+  color: var(--ink-faint);
+  letter-spacing: 0.05em;
+  margin-right: 4px;
+}
+
+.control-btn {
+  background: none;
+  border: 1px solid var(--divider);
+  border-radius: 4px;
+  padding: 3px 8px;
+  font-family: var(--mono);
+  font-size: 10px;
+  color: var(--ink-muted);
+  cursor: pointer;
+  transition: all 0.2s;
+}
+
+.control-btn:hover {
+  border-color: var(--ink);
+  color: var(--ink);
+  background-color: rgba(28, 26, 24, 0.03);
+}
+
+.control-btn.active {
+  background-color: var(--ink);
+  color: var(--bg);
+  border-color: var(--ink);
+}
+
+.control-divider {
+  width: 1px;
+  height: 16px;
+  background-color: var(--divider);
+}
+
+/* Drawer styles */
+.soundmap-drawer {
+  position: absolute;
+  top: 0;
+  right: 0;
+  bottom: 0;
+  width: 360px;
+  background-color: var(--bg);
+  border-left: 1px solid var(--divider);
+  box-shadow: -4px 0 24px rgba(28, 26, 24, 0.12);
+  display: flex;
+  flex-direction: column;
+  z-index: 20;
+  animation: slideIn 0.3s cubic-bezier(0.16, 1, 0.3, 1);
+  overflow-y: auto;
+}
+
+@keyframes slideIn {
+  from {
+    transform: translateX(100%);
+  }
+  to {
+    transform: translateX(0);
+  }
+}
+
+.drawer-header {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  padding: 16px 20px;
+  border-bottom: 1px solid var(--divider);
+}
+
+.drawer-date {
+  font-family: var(--mono);
+  font-size: 11px;
+  text-transform: uppercase;
+  color: var(--ink-muted);
+  letter-spacing: 0.08em;
+}
+
+.drawer-close {
+  background: none;
+  border: none;
+  font-size: 24px;
+  color: var(--ink-muted);
+  cursor: pointer;
+  line-height: 1;
+  padding: 0 4px;
+  transition: color 0.2s;
+}
+
+.drawer-close:hover {
+  color: var(--ink);
+}
+
+.drawer-content {
+  padding: 20px;
+  display: flex;
+  flex-direction: column;
+  gap: 20px;
+}
+
+.drawer-title {
+  font-family: var(--serif);
+  font-size: 24px;
+  font-weight: 400;
+  line-height: 1.25;
+  color: var(--ink);
+}
+
+.drawer-tags {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+}
+
+.drawer-tag {
+  font-family: var(--mono);
+  font-size: 10px;
+  padding: 3px 8px;
+  border-radius: 4px;
+  border: 1px solid var(--divider);
+  color: var(--ink-muted);
+}
+
+.tag-mood {
+  border-color: transparent;
+  color: var(--ink);
+  font-weight: 500;
+}
+
+.tag-loc, .tag-comp {
+  background-color: rgba(28, 26, 24, 0.03);
+}
+
+.drawer-player-container {
+  background-color: var(--bg-entry);
+  border: 1px solid var(--divider);
+  border-radius: 6px;
+  padding: 12px;
+}
+
+.drawer-notes-section {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+}
+
+.section-subtitle {
+  font-family: var(--mono);
+  font-size: 11px;
+  text-transform: uppercase;
+  color: var(--ink-faint);
+  letter-spacing: 0.05em;
+}
+
+.drawer-notes {
+  font-family: var(--serif);
+  font-size: 16px;
+  font-style: italic;
+  color: var(--ink);
+  line-height: 1.5;
+}
+
+.drawer-notes-empty {
+  font-family: var(--serif);
+  font-size: 14px;
+  font-style: italic;
+  color: var(--ink-faint);
+}
+
+.drawer-meta-list {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  border-top: 1px solid var(--divider);
+  padding-top: 16px;
+  margin-top: 8px;
+}
+
+.meta-item {
+  display: flex;
+  justify-content: space-between;
+  font-size: 13px;
+  font-family: var(--mono);
+}
+
+.meta-label {
+  color: var(--ink-muted);
+}
+
+.meta-value {
+  color: var(--ink);
+}
+
+/* Aura animation for selection */
+.selected-aura {
+  animation: auraPulse 3s infinite linear;
+}
+
+@keyframes auraPulse {
+  0% {
+    opacity: 0.4;
+    stroke-dashoffset: 0;
+  }
+  50% {
+    opacity: 0.8;
+    stroke-dashoffset: 6;
+  }
+  100% {
+    opacity: 0.4;
+    stroke-dashoffset: 12;
+  }
+}
+
+
 

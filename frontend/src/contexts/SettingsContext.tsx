@@ -4,12 +4,14 @@ export interface AppSettings {
   moodThemesEnabled: boolean
   transcriptKaraokeEnabled: boolean
   spectrogramViewEnabled: boolean
+  soundMapEnabled: boolean
 }
 
 const DEFAULT_SETTINGS: AppSettings = {
   moodThemesEnabled: true,
   transcriptKaraokeEnabled: true,
   spectrogramViewEnabled: false,
+  soundMapEnabled: true,
 }
 
 interface SettingsContextType {

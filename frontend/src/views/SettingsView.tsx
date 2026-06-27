@@ -55,6 +55,22 @@ export function SettingsView() {
             />
           </div>
         </div>
+
+        <div className="settings-item">
+          <div className="settings-info">
+            <label htmlFor="toggle-soundmap" className="settings-label">Sound Map</label>
+            <span className="settings-desc">Enable interactive 2D graph view of entries.</span>
+          </div>
+          <div className="settings-control">
+            <input
+              id="toggle-soundmap"
+              type="checkbox"
+              className="settings-toggle"
+              checked={settings.soundMapEnabled}
+              onChange={(e) => updateSettings({ soundMapEnabled: e.target.checked })}
+            />
+          </div>
+        </div>
       </div>
     </div>
   )

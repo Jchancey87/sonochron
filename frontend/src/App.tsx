@@ -4,12 +4,15 @@ import { CaptureView } from './views/CaptureView'
 import { SearchView } from './views/SearchView'
 import { DriveImportView } from './views/DriveImportView'
 import { SettingsView } from './views/SettingsView'
+import { SoundMapView } from './views/SoundMapView'
+import { useSettings } from './contexts/SettingsContext'
 
-type Tab = 'capture' | 'timeline' | 'search' | 'import' | 'settings'
+type Tab = 'capture' | 'timeline' | 'search' | 'import' | 'settings' | 'soundmap'
 
 export default function App() {
   const [tab, setTab] = useState<Tab>('timeline')
   const [toast, setToast] = useState<string | null>(null)
+  const { settings } = useSettings()
 
   function showToast(msg: string) {
     setToast(msg)
@@ -29,6 +32,13 @@ export default function App() {
           className={tab === 'timeline' ? 'active' : ''}
           onClick={() => setTab('timeline')}
         >Timeline</button>
+        {settings.soundMapEnabled && (
+          <button
+            id="nav-soundmap"
+            className={tab === 'soundmap' ? 'active' : ''}
+            onClick={() => setTab('soundmap')}
+          >Sound Map</button>
+        )}
         <button
           id="nav-search"
           className={tab === 'search' ? 'active' : ''}
@@ -48,6 +58,7 @@ export default function App() {
 
       {tab === 'timeline' && <TimelineView />}
       {tab === 'capture'  && <CaptureView onSaved={() => { showToast('Entry saved'); setTab('timeline') }} />}
+      {tab === 'soundmap' && <SoundMapView />}
       {tab === 'search'   && <SearchView />}
       {tab === 'import'   && <DriveImportView />}
       {tab === 'settings' && <SettingsView />}
